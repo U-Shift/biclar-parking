@@ -19,8 +19,6 @@ regions <- regions |> bind_rows(data.frame(
     url_base = "https://mds.bird.co/gbfs/v2/public/cascais/"
 ))
 
-station_info <- read.csv(paste0(base_folder, "/station_information.csv")) |> select(id, station_id)
-vehicle_types <- read.csv(paste0(base_folder, "/vehicle_types.csv")) |> select(id, vehicle_type_id)
 
 
 for (i in 1:nrow(regions)) {
@@ -28,8 +26,11 @@ for (i in 1:nrow(regions)) {
     url_base <- regions$url_base[i]
     name <- regions$name[i]
 
-
     message(sprintf("Scrapping %s station info...", name))
+
+    station_info <- read.csv(paste0(base_folder, "/station_information.csv")) |> select(id, station_id)
+    vehicle_types <- read.csv(paste0(base_folder, "/vehicle_types.csv")) |> select(id, vehicle_type_id)
+
     # 1. Get station status
     station_status <- jsonlite::fromJSON(paste0(url_base, "station_status.json"))$data$stations |>
         left_join(station_info, by = "station_id") |>
