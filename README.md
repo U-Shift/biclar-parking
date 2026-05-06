@@ -21,8 +21,11 @@ To access the data at your local machine (outside `ushift@alfa`), you must use t
 Once installed and activated, you can mount the data at your local machine using sshfs.
 
 ```bash
+# Open your repository directory
 # Adjust the location below to the location of the repository on your local machine
 $ cd ~/Repos/biclar-parking
+# Create a data directory inside your repo
+mkdir data
 # Adjust the username to your user
-$ sshfs username@alfa:/data/biclar-parking ./data
+$ sshfs username@ushift-alfa:/data/biclar-parking ./data
 ```
