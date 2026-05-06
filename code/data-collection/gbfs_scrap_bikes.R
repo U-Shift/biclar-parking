@@ -1,3 +1,9 @@
+# Set up cron: $ crontab -e
+# Add the following line: * * * * * cd /home/goncalo/Repos/biclar-parking && Rscript /home/goncalo/Repos/biclar-parking/code/data-collection/gbfs_scrap_bikes.R
+# To validate: $ crontab -l
+
+# Script
+
 library(dplyr)
 library(sf)
 library(mapview)

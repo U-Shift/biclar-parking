@@ -1,3 +1,9 @@
+# Set up cron: $ crontab -e
+# Add the following line: * * * * * cd /home/goncalo/Repos/biclar-parking && Rscript /home/goncalo/Repos/biclar-parking/code/data-collection/emel_gira.R
+# To validate: $ crontab -l
+
+# Script
+
 # Load required libraries
 library(httr2)
 library(jsonlite)
