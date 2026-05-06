@@ -1,3 +1,8 @@
+library(dplyr)
+library(sf)
+library(mapview)
+library(geojsonsf)
+
 regions <- data.frame(
     name = character(),
     base_folder = character(),
@@ -15,10 +20,6 @@ regions <- regions |> bind_rows(data.frame(
 ))
 
 
-library(dplyr)
-library(sf)
-library(mapview)
-library(geojsonsf)
 
 for (i in 1:nrow(regions)) {
     base_folder <- regions$base_folder[i]

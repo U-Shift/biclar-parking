@@ -1,3 +1,8 @@
+library(dplyr)
+library(sf)
+library(mapview)
+library(geojsonsf)
+
 regions <- data.frame(
     name = character(),
     base_folder = character(),
@@ -13,12 +18,6 @@ regions <- regions |> bind_rows(data.frame(
     base_folder = "data/collection/gbfs/bird_cascais",
     url_base = "https://mds.bird.co/gbfs/v2/public/cascais/"
 ))
-
-library(dplyr)
-library(sf)
-library(mapview)
-library(geojsonsf)
-
 
 station_info <- read.csv(paste0(base_folder, "/station_information.csv")) |> select(id, station_id)
 vehicle_types <- read.csv(paste0(base_folder, "/vehicle_types.csv")) |> select(id, vehicle_type_id)
