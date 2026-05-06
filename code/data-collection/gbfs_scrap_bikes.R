@@ -6,6 +6,8 @@ library(sf)
 library(mapview)
 library(geojsonsf)
 
+message("Scrapping bike info...")
+
 vehicle_types <- read.csv(paste0(base_folder, "/vehicle_types.csv")) |>
     select(id, vehicle_type_id)
 
@@ -20,13 +22,17 @@ free_bike_status <- jsonlite::fromJSON(paste0(url_base, "free_bike_status.json")
     ) |>
     select(-current_range_meters)
 
-summary(free_bike_status)
-nrow(free_bike_status)
-names(free_bike_status)
-View(free_bike_status |> sample_n(10))
+# summary(free_bike_status)
+# nrow(free_bike_status)
+# names(free_bike_status)
+# View(free_bike_status |> sample_n(10))
+
 
 # 2. Store data ------------------------------------------------------------
+message("Saving data...")
 store_folder <- paste(base_folder, "/", "collection/free_bike_status", sep = "")
 if (!dir.exists(store_folder)) dir.create(store_folder, recursive = TRUE)
 
 write.csv(free_bike_status, sprintf("%s/%s.csv", store_folder, format(Sys.time(), "%Y%m%d%H%M%S")), row.names = FALSE)
+
+message("Done! :)")
