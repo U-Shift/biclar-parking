@@ -104,7 +104,7 @@ tryCatch(
         message(sprintf("Successfully retrieved %d stations!", nrow(stations_df)))
 
         # Print the first few rows of the data frame to demonstrate
-        print(head(stations_df))
+        # print(head(stations_df))
 
         # Export/make stations_df available (if running interactively)
         # or assign it to the global environment
