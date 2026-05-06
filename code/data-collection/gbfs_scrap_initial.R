@@ -1,5 +1,12 @@
-base_folder <- "data/collection/gbfs/bird_lisboa"
-url_base <- "https://mds.bird.co/gbfs/v2/public/lisbon/"
+# Lisbon: https://mobilitydatabase.org/feeds/gbfs/gbfs-bikr-lisbon
+# base_folder <- "data/collection/gbfs/bird_lisboa"
+# url_base <- "https://mds.bird.co/gbfs/v2/public/lisbon/"
+
+# Cascais https://mobilitydatabase.org/feeds/gbfs/gbfs-bird-cascais
+base_folder <- "data/collection/gbfs/bird_cascais"
+url_base <- "https://mds.bird.co/gbfs/v2/public/cascais/"
+
+if (!dir.exists(base_folder)) dir.create(base_folder, recursive = TRUE)
 
 library(dplyr)
 library(sf)
@@ -41,6 +48,7 @@ summary(geofencing_zones |> select(-geometry))
 names(geofencing_zones)
 # View((geofencing_zones |> sample_n(1)))
 
+
 geofencing_zones_json <- jsonlite::toJSON(geofencing_zones$geometry)
 geofencing_zones_sfc <- geojsonsf::geojson_sfc(geofencing_zones_json)
 geofencing_zones_sf <- geofencing_zones |> st_set_geometry(geofencing_zones_sfc)
@@ -51,13 +59,3 @@ mapview(geofencing_zones_sf, zcol = "station_parking")
 
 st_write(geofencing_zones_sf |> select(id), paste0(base_folder, "/geofencing_zones.gpkg"))
 st_write(geofencing_zones_sf |> select(id), paste0(base_folder, "/geofencing_zones.geojson"))
-
-
-# 4. Vehicles --------------------------------------------------------------------
-vehicles <- jsonlite::fromJSON(paste0(url_base, "free_bike_status.json"))$data$bikes |>
-    select(bike_id, vehicle_type_id) |>
-    left_join(vehicle_types |> select(id, vehicle_type_id), by = "vehicle_type_id") |>
-    mutate(id = row_number())
-
-vehicles |> sample_n(3)
-write.csv(vehicles, paste0(base_folder, "/vehicles.csv"), row.names = FALSE)
