@@ -116,21 +116,20 @@ tryCatch(
 )
 
 
-summary(stations_df)
-nrow(stations_df)
-View(stations_df)
+# summary(stations_df)
+# nrow(stations_df)
+# View(stations_df)
 
-write.csv(stations_df |> select(-bikes, -docks, -assetStatus), "data/collection/gbfs/emel_gira/stations_information.csv", row.names = FALSE)
-
-stations_sf <- stations_df |>
-    select(-bikes, -docks, -assetStatus) |>
-    sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-mapview::mapview(stations_sf)
-
-sf::st_write(stations_sf, "data/collection/gbfs/emel_gira/stations_information.gpkg")
-sf::st_write(stations_sf, "data/collection/gbfs/emel_gira/stations_information.geojson")
+# write.csv(stations_df |> select(-bikes, -docks, -assetStatus), "data/collection/gbfs/emel_gira/stations_information.csv", row.names = FALSE)
+# stations_sf <- stations_df |>
+#    select(-bikes, -docks, -assetStatus) |>
+#    sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+# mapview::mapview(stations_sf)
+# sf::st_write(stations_sf, "data/collection/gbfs/emel_gira/stations_information.gpkg")
+# sf::st_write(stations_sf, "data/collection/gbfs/emel_gira/stations_information.geojson")
 
 # 3. Store data ------------------------------------------------------------
+message("Saving data...")
 base_folder <- "data/collection/gbfs/emel_gira"
 
 date <- Sys.Date()
@@ -146,3 +145,5 @@ write.csv(
     paste0(store_folder, "/", format(Sys.time(), "%H%M%S"), ".csv"),
     row.names = FALSE
 )
+
+message("Done! :)")
