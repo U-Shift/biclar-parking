@@ -13,6 +13,9 @@ mapview(st_zm(aml_shared_mobility), zcol="N_Lugares")
 mapview(st_zm(aml_shared_mobility), zcol="Tipologia")
 mapview(st_zm(aml_shared_mobility), zcol="Modo")
 
+summary(aml_shared_mobility$N_Lugares)
+summary(aml_shared_mobility$Tipologia)
+
 table(aml_shared_mobility$Concelho)
 # Alcochete    Almada   Cascais    Lisboa   Montijo    Oeiras   Palmela
 # 2       129       148      2039        42       206       341
@@ -121,9 +124,10 @@ osm_parking <- osmdata_sf(q)
 summary(osm_parking)
 osm_parking_points <- osm_parking$osm_points |> mutate(capacity = as.integer(capacity))
 summary(osm_parking_points)
+nrow(osm_parking_points)
 osm_parking_pygons <- osm_parking$osm_polygons |> mutate(capacity = as.integer(capacity))
 summary(osm_parking_pygons)
-
+nrow(osm_parking_pygons)
 mapview(osm_parking_points, zcol="capacity") + mapview(osm_parking_pygons, zcol="capacity")
 
 
@@ -155,6 +159,7 @@ mapview(mubi_parking_points |> select(id, text, description, average), zcol="ave
 summary(mubi_parking_points$slots)
 # Min. 1st Qu.  Median    Mean 3rd Qu.    Max.     NAs
 # 0.000   4.000   8.000   8.196  10.000  64.000     259
+summary(mubi_parking_points$classification)
 table(mubi_parking_points$classification)
 # biciparque    hotspot    regular
 # 8        334       1394
