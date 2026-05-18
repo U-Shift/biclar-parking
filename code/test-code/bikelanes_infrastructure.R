@@ -6,6 +6,11 @@ library(mapview)
 
 ## Bike network (existant + planned) ------------------------------------------------------------
 
+# aml_cyclelanes_existant_open <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/rede_ciclavel_rede_ciclavel_existente/items?f=json&limit=1000") |>
+#   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/rede_ciclavel_rede_ciclavel_existente/items?f=json&limit=1000&offset=1000"))
+# nrow(aml_cyclelanes_existant_open) # 1199
+# summary(aml_cyclelanes_existant_open)
+
 aml_cyclelanes_existant <- st_read("/data/IMPT/BaseDados_PMMUS/10-ModosAtivos/Fig10_5_RedeCiclavel_Existente-Prevista.gpkg", layer = "Fig5_RedeCiclavelExistente")
 nrow(aml_cyclelanes_existant) # 1199
 summary(aml_cyclelanes_existant)
@@ -20,6 +25,14 @@ table(aml_cyclelanes_existant$Municipio_)
 # 8                   6                  14                   9                  19                  14                  96
 # Sesimbra             Setúbal              Sintra Vila Franca de Xira
 # 9                  29                   7                  35
+
+
+# aml_cyclelanes_planned_open <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/rede_ciclavel_rede_ciclavel_prevista/items?f=json&limit=1000") |>
+#   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/rede_ciclavel_rede_ciclavel_prevista/items?f=json&limit=1000&offset=1000")) |>
+#   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/rede_ciclavel_rede_ciclavel_prevista/items?f=json&limit=1000&offset=2000")) |>
+#   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/rede_ciclavel_rede_ciclavel_prevista/items?f=json&limit=1000&offset=3000"))
+# nrow(aml_cyclelanes_planned_open) # 3215
+# summary(aml_cyclelanes_planned_open)
 
 aml_cyclelanes_planned <- st_read("/data/IMPT/BaseDados_PMMUS/10-ModosAtivos/Fig10_5_RedeCiclavel_Existente-Prevista.gpkg", layer = "Fig5_RedeCiclavelPrevista")
 nrow(aml_cyclelanes_planned) # 3215
