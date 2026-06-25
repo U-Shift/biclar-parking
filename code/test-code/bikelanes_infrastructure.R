@@ -11,6 +11,9 @@ library(mapview)
 # nrow(aml_cyclelanes_existant_open) # 1199
 # summary(aml_cyclelanes_existant_open)
 
+
+
+
 aml_cyclelanes_existant <- st_read("/data/IMPT/BaseDados_PMMUS/10-ModosAtivos/Fig10_5_RedeCiclavel_Existente-Prevista.gpkg", layer = "Fig5_RedeCiclavelExistente")
 nrow(aml_cyclelanes_existant) # 1199
 summary(aml_cyclelanes_existant)
