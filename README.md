@@ -41,3 +41,12 @@ Scripts should be named using the convention `XX_name_camel_case.R`, with `XX` a
 Data should be stored in the [`/data`](./data) directory, with subdirectories for each data category. If there is not a subfolder for the category you are working with, create one. Mind that this folder is not synced with Git. Refer to [Data access set up](#Data access set up) on instructions on how to sync this folder with the remote server.
 
 [`/useful_data`](./useful_data) is an alternative folder to store data, synced with Git, but should only be used for contextual base data (with small size) that should be shared publicly to enable results reproducibility/interpretability. For instance, CSV tables with geometries ids and associated metadata. 
+
+## Base geo layers
+
+Base geographic layers for analysis are: grid, parishes, municipalities. Their geometries are stored at [`/data/geo`](./data/geo) directory.
+
+Each is identified by an id column, named with the first letter of the layer type. For instance, the id for a grid cell is called `gid`, for a parish `pid`, and for a municipality `mid`.
+
+Metadata for each is stored in [`/useful_data`](./useful_data), associating, to each layer, id, the corresponding name, relations with other layers and NUTS2 (`nid`).
+
