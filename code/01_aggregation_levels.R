@@ -119,7 +119,7 @@ mapview(
   # Color
   col.regions = "#015160"
 ) + mapview(
-  CAOP_GLPS_LAND_UNIQUE_dtmnfr,
+  CAOP_GLPS_LAND,
   # Hide elements, for printscreen
   homebutton = FALSE, legend = TRUE, layer.control.show = FALSE,
   # Color
@@ -231,16 +231,17 @@ library(h3jsr)
 h3_res <- 9 # 400m diameter (https://h3geo.org/docs/core-library/restable/)
 
 # > Use buffer to make sure all land is covered by grid
-municipalities_union_bbox_plus = sf::st_read("data/geo/municipalities_union_plus_150m.gpkg")
+municipalities_union_bbox_plus = sf::st_read("data/geo/municipalities_union_plus_150m.gpkg") # 25112 cells
+# municipalities_union_bbox_plus = sf::st_read("data/geo/municipalities_union.gpkg") # 24156 cells
 
 grid_ids <- municipalities_union_bbox_plus |> # municipalities_union |>
   polygon_to_cells(res = h3_res)
 grid <- grid_ids$`0` |>
   cell_to_polygon(simple = FALSE)
 nrow(grid)
-mapview(municipalities_union, layer.name = "Municipalities Union", col.regions = "#015160") +
-  mapview(municipalities_union_bbox_plus, layer.name = "Municipalities Union + buffer", col.regions = "#00ccff") +
-  mapview(grid, layer.name = "H3 Grid", col.regions = "#ffcc00", legend=FALSE) 
+mapview(municipalities_union, layer.name = "Municipalities Union", col.regions = "#015160", legend=TRUE) +
+  mapview(municipalities_union_bbox_plus, layer.name = "Municipalities Union + buffer", col.regions = "#00ccff", legend=TRUE) +
+  mapview(grid, layer.name = "H3 Grid", col.regions = "#ffcc00", legend=FALSE, zcol=NULL) 
   
 nrow(grid) # 25112
 grid <- grid |>
