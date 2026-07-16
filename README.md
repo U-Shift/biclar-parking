@@ -29,3 +29,15 @@ mkdir data
 # Adjust the username to your user
 $ sshfs username@ushift-alfa:/data/biclar-parking ./data
 ```
+
+## Code structure and data management
+
+Code should be stored in [`/code`](./code) directory.
+
+Scripts should be named using the convention `XX_name_camel_case.R`, with `XX` a sequential number and a brief but explanatory enough name, written in camel case.
+
+[`00_data_load.R`](./code/00_data_load.R) and [`99_results_load.R`](./code/99_results_load.R) are special scripts for loading data and results, respectively. You should extend them if in any of your scripts you generate new base data or results. Make sure to add only the output of your scripts to these files.
+
+Data should be stored in the [`/data`](./data) directory, with subdirectories for each data category. If there is not a subfolder for the category you are working with, create one. Mind that this folder is not synced with Git. Refer to [Data access set up](#Data access set up) on instructions on how to sync this folder with the remote server.
+
+[`/useful_data`](./useful_data) is an alternative folder to store data, synced with Git, but should only be used for contextual base data (with small size) that should be shared publicly to enable results reproducibility/interpretability. For instance, CSV tables with geometries ids and associated metadata. 
