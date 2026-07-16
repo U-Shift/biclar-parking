@@ -4,7 +4,27 @@ library(mapview)
 
 # TML PMUS Database -------------------------------------------------------
 
+## Bike parking spaces (Only Lisbon!) -------------------------------------------------------
+
+lisbon_parking_points <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/cml_ciclovia_estacionamento/items?f=json&limit=1000") |>
+  bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/cml_ciclovia_estacionamento/items?f=json&limit=1000&offset=1000")) |>
+  bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/cml_ciclovia_estacionamento/items?f=json&limit=1000&offset=2000"))
+nrow(aml_parking_points) # 2209
+summary(aml_parking_points)
+
+summary(lisbon_parking_points$CAPACIDADE)
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max.     NAs
+# 2.000   6.000   9.000   8.621  10.000  66.000      14
+
+mapview(st_zm(lisbon_parking_points), zcol="CAPACIDADE")
+
 ## Shared mobility parking spaces -------------------------------------------------------
+# aml_shared_mobility_open <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/modos_partilhados_pontos_partilha_aml/items?f=json&limit=1000") |>
+#   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/modos_partilhados_pontos_partilha_aml/items?f=json&limit=1000&offset=1000")) |>
+#   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/modos_partilhados_pontos_partilha_aml/items?f=json&limit=1000&offset=2000"))
+# nrow(aml_shared_mobility_open) # 2907
+# summary(aml_shared_mobility_open)
+
 aml_shared_mobility <- st_read("/data/IMPT/BaseDados_PMMUS/11-ModosPartilhados/11 - ModosPartilhados.gpkg", layer = "Pontos-partilha_amL") |>
   st_transform(4326)
 nrow(aml_shared_mobility) # 2907
@@ -12,6 +32,9 @@ summary(aml_shared_mobility)
 mapview(st_zm(aml_shared_mobility), zcol="N_Lugares")
 mapview(st_zm(aml_shared_mobility), zcol="Tipologia")
 mapview(st_zm(aml_shared_mobility), zcol="Modo")
+
+summary(aml_shared_mobility$N_Lugares)
+summary(aml_shared_mobility$Tipologia)
 
 table(aml_shared_mobility$Concelho)
 # Alcochete    Almada   Cascais    Lisboa   Montijo    Oeiras   Palmela
@@ -121,9 +144,10 @@ osm_parking <- osmdata_sf(q)
 summary(osm_parking)
 osm_parking_points <- osm_parking$osm_points |> mutate(capacity = as.integer(capacity))
 summary(osm_parking_points)
+nrow(osm_parking_points)
 osm_parking_pygons <- osm_parking$osm_polygons |> mutate(capacity = as.integer(capacity))
 summary(osm_parking_pygons)
-
+nrow(osm_parking_pygons)
 mapview(osm_parking_points, zcol="capacity") + mapview(osm_parking_pygons, zcol="capacity")
 
 
@@ -155,6 +179,7 @@ mapview(mubi_parking_points |> select(id, text, description, average), zcol="ave
 summary(mubi_parking_points$slots)
 # Min. 1st Qu.  Median    Mean 3rd Qu.    Max.     NAs
 # 0.000   4.000   8.000   8.196  10.000  64.000     259
+summary(mubi_parking_points$classification)
 table(mubi_parking_points$classification)
 # biciparque    hotspot    regular
 # 8        334       1394
