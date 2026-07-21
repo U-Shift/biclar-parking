@@ -82,6 +82,24 @@ COS_GLPS_LAND <- COS_GLPS |>
 nrow(COS_GLPS_LAND) # 30975
 # mapview(COS_GLPS_LAND)
 
+# > Remove bboxs from COS_GLPS_LAND
+bbox = list(
+  c(38.698032, -9.179598, 38.682482, -9.174718), # Ponte 25 de Abril
+  c(38.736986, -9.008036, 38.783230, -9.081920), # Ponte Vasco da Gama South
+  c(38.786945, -9.090903, 38.782942, -9.075899) # Ponte Vasco da Gama North
+)
+for (i in seq_along(bbox)) { # i = 1
+  bbox_i = st_as_sfc(
+    st_bbox(c(xmin = bbox[[i]][2], xmax = bbox[[i]][4], ymin = bbox[[i]][3], ymax = bbox[[i]][1]), 
+    crs = st_crs(4326))
+  )
+  # mapview(bbox_i)
+  COS_GLPS_LAND <- COS_GLPS_LAND |>
+    st_difference(bbox_i)
+}
+mapview(COS_GLPS_LAND, layer.name="COS Land", col.regions="#996633")
+
+
 # > Cut CAOP using COS land geometry
 sf_use_s2(FALSE)
 COS_GLPS_LAND_UNION = COS_GLPS_LAND |>
