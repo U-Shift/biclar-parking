@@ -112,11 +112,12 @@ mapview(COS_GLPS_LAND_UNION, layer.name="COS Land Union", col.regions="#996633")
 # sf::st_write(COS_GLPS_LAND, "data/geo/COS_GLPS_LAND.gpkg", delete_dsn = TRUE)
 # COS_GLPS_LAND = sf::st_read("data/geo/COS_GLPS_LAND.gpkg")
 
+
 # > Cut CAOP_GLPS with COS_GLPS_LAND
 CAOP_GLPS_LAND <- CAOP_GLPS |>
   st_intersection(COS_GLPS_LAND_UNION) |>
   st_make_valid()
-nrow(CAOP_GLPS_LAND) # 189
+nrow(CAOP_GLPS_LAND) # 188
 # mapview(CAOP_GLPS_LAND)
 
 
@@ -241,7 +242,7 @@ for (dist in plus_distances) {
 
 # H3 Grid ----------------------------------------------------
 
-
+# TODO! From here
 ## 1. Get H3 grid matching the study area ----------------------------------------------------
 # We will keep using the TML grid for now, but in the future we can produce a new one with h3, which is replicable and has nice properties (equal area, hierarchical, etc).
 library(h3jsr)
@@ -249,7 +250,7 @@ library(h3jsr)
 h3_res <- 9 # 400m diameter (https://h3geo.org/docs/core-library/restable/)
 
 # > Use buffer to make sure all land is covered by grid
-municipalities_union_bbox_plus = sf::st_read("data/geo/municipalities_union_plus_150m.gpkg") # 25112 cells
+municipalities_union_bbox_plus = sf::st_read("data/geo/municipalities_union_plus_500m.gpkg") # 25112 cells
 # municipalities_union_bbox_plus = sf::st_read("data/geo/municipalities_union.gpkg") # 24156 cells
 
 grid_ids <- municipalities_union_bbox_plus |> # municipalities_union |>
@@ -257,11 +258,22 @@ grid_ids <- municipalities_union_bbox_plus |> # municipalities_union |>
 grid <- grid_ids$`0` |>
   cell_to_polygon(simple = FALSE)
 nrow(grid)
+
+# > Remove grid that does not overlap with municipalities_union
+grid_overlap <- grid |>
+  st_make_valid() |>
+  st_intersection(municipalities_union) |>
+  st_drop_geometry()
+grid <- grid |>
+  filter(h3_address %in% grid_overlap$h3_address)
+mapview(grid)
+
 mapview(municipalities_union, layer.name = "Municipalities Union", col.regions = "#015160", legend=TRUE) +
   mapview(municipalities_union_bbox_plus, layer.name = "Municipalities Union + buffer", col.regions = "#00ccff", legend=TRUE) +
   mapview(grid, layer.name = "H3 Grid", col.regions = "#ffcc00", legend=FALSE, zcol=NULL) 
-  
-nrow(grid) # 25112
+nrow(grid) # 25380
+
+
 grid <- grid |>
   mutate(gid = seq(1:nrow(grid))) # give an ID to each cell
 # mapview(grid, zcol="gid", layer.name = "H3 Grid with ID", legend=FALSE)
@@ -274,7 +286,7 @@ grid <- grid |>
 
 # > Find centroids
 grid_centroids = st_centroid(grid)
-nrow(grid_centroids) # 25112
+nrow(grid_centroids) # 25380
 # mapview(grid_centroids)
 # sf::st_write(grid_centroids, "data/geo/grid_centroids.gpkg", delete_dsn = TRUE)
 # grid_centroids = sf::st_read("data/geo/grid_centroids.gpkg")
@@ -287,7 +299,7 @@ summary(grid_nuts)
 
 # > For missing parish info (because the centroid falls outside any parish polygon due to buffer), get closest
 grid_nuts_missing_parish <- grid_nuts |> filter(is.na(pid))
-nrow(grid_nuts_missing_parish) # 556
+nrow(grid_nuts_missing_parish) # 743
 mapview(grid_nuts_missing_parish, layer.name = "Grid without parish ID", col.regions = "#ff0000", legend=FALSE)
 
 closest_parish <- st_nearest_feature(grid_nuts_missing_parish, CAOP_GLPS)
@@ -319,4 +331,4 @@ grid_nuts_meta <- grid_nuts |>
   left_join(grid |> st_drop_geometry() |> select(gid, h3_address), by = "gid")
 grid_nuts_meta
 
-write.csv(grid_nuts_meta, "useful_data/grid.csv", row.names = FALSE)
+# write.csv(grid_nuts_meta, "useful_data/grid.csv", row.names = FALSE)
