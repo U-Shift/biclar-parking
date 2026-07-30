@@ -1,5 +1,6 @@
 # Aggregates raw data collection for operators producing stats for each bike station (different periods)
-# Run with: $ Rscript code/analysis/gbfs_00_aggregation.R
+# Run with: $ Rscript code/analysis/gbfs_00_aggregation.R > code/analysis/gbfs_00_aggregation_20260730.log 2>&1
+
 source("code/00_data_load.R")
 source("code/00_helpers.R")
 
@@ -72,7 +73,7 @@ aggregate_station_stats <- function(stats) {
 
 
 load_station_collection <- function(
-  base_folder, subfolder, 
+  base_folder, subfolder,
   date_start, date_end,
   parse_file_fn = read.csv
 ) {

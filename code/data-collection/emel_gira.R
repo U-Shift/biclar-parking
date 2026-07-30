@@ -2,6 +2,8 @@
 # Add the following line: * * * * * cd /home/goncalo/Repos/biclar-parking && Rscript /home/goncalo/Repos/biclar-parking/code/data-collection/emel_gira.R
 # To validate: $ crontab -l
 
+# Count files gathered per day: $ find data/collection/gbfs/emel_gira/collection/station_information/ -mindepth 1 -maxdepth 1 -type d -exec sh -c 'printf "%s: %d files\n" "$1" $(find "$1" -maxdepth 1 -type f | wc -l)' _ {} \; | sort
+
 # Script
 
 # Load required libraries

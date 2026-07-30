@@ -2,6 +2,11 @@
 # Add the following line: * * * * * cd /home/goncalo/Repos/biclar-parking && Rscript /home/goncalo/Repos/biclar-parking/code/data-collection/gbfs_scrap_bikes.R
 # To validate: $ crontab -l
 
+# Count files gathered per day: $ find data/collection/gbfs/bird_lisboa/collection/free_bike_status/ -mindepth 1 -maxdepth 1 -type d -exec sh -c 'printf "%s: %d files\n" "$1" $(find "$1" -maxdepth 1 -type f | wc -l)' _ {} \; | sort
+
+# Count files gathered per day: $ find data/collection/gbfs/bird_cascais/collection/free_bike_status/ -mindepth 1 -maxdepth 1 -type d -exec sh -c 'printf "%s: %d files\n" "$1" $(find "$1" -maxdepth 1 -type f | wc -l)' _ {} \; | sort
+
+
 # Script
 
 library(dplyr)
