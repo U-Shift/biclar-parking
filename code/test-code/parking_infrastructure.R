@@ -97,6 +97,7 @@ aml_bike_parking_interfaces <- st_read("/data/IMPT/BaseDados_PMMUS/10-ModosAtivo
   )
 nrow(aml_bike_parking_interfaces) # 263
 summary(aml_bike_parking_interfaces)
+mapview(st_zm(aml_bike_parking_interfaces), zcol="X_capacidad")
 mapview(st_zm(aml_bike_parking_interfaces), zcol="Oferta")
 mapview(st_zm(aml_bike_parking_interfaces), zcol="PROCURA")
 mapview(st_zm(aml_bike_parking_interfaces |> filter(!is.na(occupation))), zcol="occupation")
@@ -215,6 +216,49 @@ mapview(mubi_parking_requests |> select(id, text, description, support) |> filte
 summary(mubi_parking_requests$support)
 # Min. 1st Qu.  Median    Mean 3rd Qu.    Max.
 # 0.000   1.000   2.000   2.368   3.000  35.000
+
+## Tentativa de agregar dados TML/OSM/MUBi
+
+# Agregação dados OSM (tornar polígonos em pontos e juntar tudo)
+
+osm_parking_centroids <- st_centroid(osm_parking_pygons)
+osm_parking_beta <- bind_rows(osm_parking_points, osm_parking_centroids)
+osm_parking_beta <- osm_parking_beta |> select(osm_id, bicycle_parking, capacity, covered, geometry)
+#osm_parking_beta_filter <- osm_parking_beta |> filter(!is.na(capacity))
+mapview(osm_parking_beta, zcol="capacity")
+#mapview(osm_parking_beta_filter, zcol="capacity")
+
+# Agregação de todos os dados
+# OSM -> osm_id, bicycle_parking (tipo de estrutura), capacity, covered, geometry; adicionar municipio
+# TML -> Municipio, cod_interf, X_capacidad, Oferta, PROCURA, geom
+# MUBi -> id, structureType, isCovered, slots, Concelho, geometry
+# Final -> ID, municipality, structure_type, is_covered, capacity, (supply, demand), geometry
+
+# Adicionar municípios
+osm_parking_final <- st_join(osm_parking_beta, aml, join = st_within)
+
+# Standardizar nomes de colunas
+osm_parking_final <- osm_parking_final |> rename(
+  ID = osm_id,
+  municipality = Concelho,
+  structure_type = bicycle_parking,
+  is_covered = covered
+)
+
+mubi_parking_final <- mubi_parking_points |> select(id, structureType, isCovered, slots, geometry, Concelho)
+mubi_parking_final <- mubi_parking_final |> rename(
+  ID = id,
+  municipality = Concelho,
+  structure_type = structureType,
+  is_covered = isCovered,
+  capacity = slots
+)
+osm_parking_final <- osm_parking_final |> mutate(ID = as.integer(ID))
+osm_parking_final <- osm_parking_final |> mutate(is_covered = ifelse(is_covered == "yes", TRUE, FALSE))
+mubi_parking_final <- mubi_parking_final |> mutate(ID = as.integer(ID))
+
+total_parking_beta <- bind_rows(osm_parking_final=osm_parking_final, mubi_parking_final=mubi_parking_final, .id="source")
+
 
 
 ## Reviews of existing infrastructure  ---------------------------------------------------
