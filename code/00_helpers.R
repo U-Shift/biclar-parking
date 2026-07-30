@@ -41,9 +41,6 @@ analyse_col_dispersion <- function(
   if ("sd" %in% measures_to_consider) {
     out[[paste0(col_name, "_sd")]] <- rlang::expr(round(sd(!!col_sym, na.rm = TRUE), !!d))
   }
-  if ("sum" %in% measures_to_consider) {
-    out[[paste0(col_name, "_sum")]] <- rlang::expr(round(sum(!!col_sym, na.rm = TRUE), !!d))
-  }
 
   out
 }
