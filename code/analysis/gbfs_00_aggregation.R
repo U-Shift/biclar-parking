@@ -96,7 +96,7 @@ load_station_collection <- function(
 
   result <- dplyr::bind_rows(all_days)
   # Free the intermediate list before returning the combined frame
-  rm(all_days); gc(invisible = TRUE)
+  rm(all_days); invisible(gc())
   result
 }
 
@@ -178,7 +178,7 @@ for (r in regions) { # r = regions[[1]]
     select(id, timestamp, free_bikes, free_docks, is_installed) |>
     aggregate_station_updates()
   # Raw collection no longer needed — free before aggregation
-  rm(station_status_collection); gc(invisible = TRUE)
+  rm(station_status_collection); invisible(gc())
   # nrow(station_status_collection_enriched)
   # summary(station_status_collection_enriched)
   # View(station_status_collection_enriched)
@@ -193,7 +193,7 @@ for (r in regions) { # r = regions[[1]]
   # Free all large objects before next region iteration
   rm(station_points, station_data, stations_in_grid,
      station_status_collection_enriched, station_metrics_all)
-  gc(invisible = TRUE)
+  invisible(gc())
 }
 
 
@@ -248,7 +248,7 @@ station_status_collection_enriched <- station_status_collection |>
   select(id, timestamp, free_bikes, free_docks, is_installed) |>
   aggregate_station_updates()
 # Raw collection no longer needed — free before aggregation
-rm(station_status_collection); gc(invisible = TRUE)
+rm(station_status_collection); invisible(gc())
 # nrow(station_status_collection_enriched)
 # summary(station_status_collection_enriched)
 # View(station_status_collection_enriched)
