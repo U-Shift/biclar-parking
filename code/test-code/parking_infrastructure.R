@@ -258,6 +258,31 @@ osm_parking_final <- osm_parking_final |> mutate(is_covered = ifelse(is_covered 
 mubi_parking_final <- mubi_parking_final |> mutate(ID = as.integer(ID))
 
 total_parking_beta <- bind_rows(osm_parking_final=osm_parking_final, mubi_parking_final=mubi_parking_final, .id="source")
+mapview(total_parking_beta, zcol="capacity")
+
+# Remover duplicados (e escolher qual manter)
+
+remove_duplicates <- function(points, distance_threshold, relevant_column) {
+  coordinates <- st_coordinates(points)
+  removal_list <- logical(nrow(points))
+
+  for (i in 1:nrow(points)) {
+    if (removal_list[i]) next
+    distances <- st_distance(points[i, ], points)
+    distances_n <- as.numeric(distances)
+    nearby_points <- which(distances_n<distance_threshold & distances_n>0)
+
+    # só incluir se o objectivo for escolher o ponto de estacionamento com maior capacidade
+    if (length(nearby_points)>0) {
+        nearby_capacities <- st_drop_geometry(points[nearby_points, ])[relevant_column]
+        lower_capacity <- nearby_points[nearby_capacities < points[[relevant_column]][i]]
+        removal_list[lower_capacity] <- TRUE
+    }
+  }
+  return(points[!removal_list, ])
+}
+
+filtered_parking_beta <- remove_duplicates(total_parking_beta, distance_threshold=10,relevant_column="capacity")
 
 
 
