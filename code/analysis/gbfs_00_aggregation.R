@@ -94,7 +94,10 @@ load_station_collection <- function(
     all_days[[i]] <- dplyr::bind_rows(lapply(files, parse_file_fn))
   }
 
-  dplyr::bind_rows(all_days)
+  result <- dplyr::bind_rows(all_days)
+  # Free the intermediate list before returning the combined frame
+  rm(all_days); gc(invisible = TRUE)
+  result
 }
 
 write_period_metrics <- function(enriched, output_folder, periods) {
@@ -174,6 +177,8 @@ for (r in regions) { # r = regions[[1]]
     ) |>
     select(id, timestamp, free_bikes, free_docks, is_installed) |>
     aggregate_station_updates()
+  # Raw collection no longer needed — free before aggregation
+  rm(station_status_collection); gc(invisible = TRUE)
   # nrow(station_status_collection_enriched)
   # summary(station_status_collection_enriched)
   # View(station_status_collection_enriched)
@@ -184,6 +189,11 @@ for (r in regions) { # r = regions[[1]]
   # Save overall (unfiltered) metrics to disk
   station_metrics_all <- station_status_collection_enriched |> aggregate_station_stats()
   write.csv(station_metrics_all, paste0(output_folder, "/station_metrics_all.csv"), row.names = FALSE)
+
+  # Free all large objects before next region iteration
+  rm(station_points, station_data, stations_in_grid,
+     station_status_collection_enriched, station_metrics_all)
+  gc(invisible = TRUE)
 }
 
 
@@ -237,6 +247,8 @@ station_status_collection_enriched <- station_status_collection |>
   ) |>
   select(id, timestamp, free_bikes, free_docks, is_installed) |>
   aggregate_station_updates()
+# Raw collection no longer needed — free before aggregation
+rm(station_status_collection); gc(invisible = TRUE)
 # nrow(station_status_collection_enriched)
 # summary(station_status_collection_enriched)
 # View(station_status_collection_enriched)
