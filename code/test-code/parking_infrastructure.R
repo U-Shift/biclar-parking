@@ -1,6 +1,7 @@
 library(dplyr)
 library(sf)
 library(mapview)
+library(units)
 
 # TML PMUS Database -------------------------------------------------------
 
@@ -217,7 +218,7 @@ summary(mubi_parking_requests$support)
 # Min. 1st Qu.  Median    Mean 3rd Qu.    Max.
 # 0.000   1.000   2.000   2.368   3.000  35.000
 
-## Tentativa de agregar dados TML/OSM/MUBi
+## Tentativa de agregar dados OSM e MUBi
 
 # Agregação dados OSM (tornar polígonos em pontos e juntar tudo)
 
@@ -225,7 +226,7 @@ osm_parking_centroids <- st_centroid(osm_parking_pygons)
 osm_parking_beta <- bind_rows(osm_parking_points, osm_parking_centroids)
 osm_parking_beta <- osm_parking_beta |> select(osm_id, bicycle_parking, capacity, covered, geometry)
 #osm_parking_beta_filter <- osm_parking_beta |> filter(!is.na(capacity))
-mapview(osm_parking_beta, zcol="capacity")
+#mapview(osm_parking_beta, zcol="capacity")
 #mapview(osm_parking_beta_filter, zcol="capacity")
 
 # Agregação de todos os dados
@@ -244,6 +245,9 @@ osm_parking_final <- osm_parking_final |> rename(
   structure_type = bicycle_parking,
   is_covered = covered
 )
+osm_parking_final <- osm_parking_final |> mutate(ID = as.integer(ID)) #id as integer and not string
+osm_parking_final <- osm_parking_final |> mutate(is_covered = ifelse(is_covered == "yes", TRUE, FALSE)) #is_covered as boolean and not string
+mapview(osm_parking_final, zcol="capacity")
 
 mubi_parking_final <- mubi_parking_points |> select(id, structureType, isCovered, slots, geometry, Concelho)
 mubi_parking_final <- mubi_parking_final |> rename(
@@ -253,37 +257,45 @@ mubi_parking_final <- mubi_parking_final |> rename(
   is_covered = isCovered,
   capacity = slots
 )
-osm_parking_final <- osm_parking_final |> mutate(ID = as.integer(ID))
-osm_parking_final <- osm_parking_final |> mutate(is_covered = ifelse(is_covered == "yes", TRUE, FALSE))
-mubi_parking_final <- mubi_parking_final |> mutate(ID = as.integer(ID))
+mubi_parking_final <- mubi_parking_final |> mutate(ID = as.integer(ID)) #id as integer and not string
+mapview(mubi_parking_final, zcol="capacity")
 
-total_parking_beta <- bind_rows(osm_parking_final=osm_parking_final, mubi_parking_final=mubi_parking_final, .id="source")
+total_parking_beta <- bind_rows(osm_parking_final=osm_parking_final, mubi_parking_final=mubi_parking_final, .id="data_source")
 mapview(total_parking_beta, zcol="capacity")
 
-# Remover duplicados (e escolher qual manter)
+# Remoção de duplicados - Metodologia:
+# Buffer euclideano de raio "distance_threshold", criado para cada ponto de estacionamento
+# Se existir qualquer outro ponto dentro deste buffer (para além do original), são removidos os pontos que tiverem
+# OU nenhuma informação sobre a sua capacidade (i.e. "capacity == NA")
+# OU todos os pontos com menor ou igual capacidade que o estudado
+# dado que tanto os dados da MUBi como do OSM tinham muitos duplicados, mesmo analisando cada base de dados individualmente,
+# faz sentido apenas manter um ponto de estacionamento dentro de cada buffer especificado
 
-remove_duplicates <- function(points, distance_threshold, relevant_column) {
-  coordinates <- st_coordinates(points)
+
+remove_duplicates <- function(points, distance_threshold, capacity_column, source_column) {
   removal_list <- logical(nrow(points))
+  distance_threshold <- units::set_units(distance_threshold, "m")
 
   for (i in 1:nrow(points)) {
     if (removal_list[i]) next
     distances <- st_distance(points[i, ], points)
     distances_n <- as.numeric(distances)
-    nearby_points <- which(distances_n<distance_threshold & distances_n>0)
+    nearby_points <- which(distances<distance_threshold & distances>units::set_units(0,"m"))
 
-    # só incluir se o objectivo for escolher o ponto de estacionamento com maior capacidade
     if (length(nearby_points)>0) {
-        nearby_capacities <- st_drop_geometry(points[nearby_points, ])[relevant_column]
-        lower_capacity <- nearby_points[nearby_capacities < points[[relevant_column]][i]]
-        removal_list[lower_capacity] <- TRUE
+        nearby_capacities <- st_drop_geometry(points[nearby_points, ])[capacity_column]
+        na_points <- nearby_points[is.na(nearby_capacities)] #points with NA capacity inside buffer
+        lower_capacity <- nearby_points[which(nearby_capacities <= points[[capacity_column]][i] & !is.na(nearby_capacities))] #points with lower capacity than the evaluated one
+#       same_capacity <- nearby_points[which(nearby_capacities == points[[capacity_column]][i] & points[[source_column]][nearby_points] != points[[source_column]][i])] #points with same capacity but different sources
+        points_to_remove <- c(na_points, lower_capacity)
+        removal_list[points_to_remove] <- TRUE
     }
   }
   return(points[!removal_list, ])
 }
 
-filtered_parking_beta <- remove_duplicates(total_parking_beta, distance_threshold=10,relevant_column="capacity")
-
+filtered_parking_final <- remove_duplicates(total_parking_beta, distance_threshold=10, capacity_column="capacity", source_column="data_source")
+mapview(filtered_parking_final, zcol="capacity")
 
 
 ## Reviews of existing infrastructure  ---------------------------------------------------
