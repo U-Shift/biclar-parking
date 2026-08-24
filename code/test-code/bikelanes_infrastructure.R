@@ -53,3 +53,13 @@ table(aml_cyclelanes_planned$Municipio_)
 # 110                  77                  13                 168
 
 mapview(aml_cyclelanes_existant, color="darkgreen") + mapview(aml_cyclelanes_planned, color="orange")
+
+# OSM cycleway data
+osm_cyclelanes <- st_read("/data/IMPT/mobility/cycle_network_class.gpkg") |> st_transform(4326)
+nrow(osm_cyclelanes)
+summary(osm_cyclelanes)
+#mapview(osm_cyclelanes)
+
+osm_protected_cyclelanes <- osm_cyclelanes[osm_cyclelanes$cycle_segregation != "Advisory lane",]
+mapview(osm_protected_cyclelanes)
+

@@ -267,9 +267,9 @@ mapview(total_parking_beta, zcol="capacity")
 # Buffer euclideano de raio "distance_threshold", criado para cada ponto de estacionamento
 # Se existir qualquer outro ponto dentro deste buffer (para além do original), são removidos os pontos que tiverem
 # OU nenhuma informação sobre a sua capacidade (i.e. "capacity == NA")
-# OU todos os pontos com menor ou igual capacidade que o estudado
+# OU menor ou igual capacidade que o ponto estudado
 # dado que tanto os dados da MUBi como do OSM tinham muitos duplicados, mesmo analisando cada base de dados individualmente,
-# faz sentido apenas manter um ponto de estacionamento dentro de cada buffer especificado
+# faz sentido apenas manter um ponto de estacionamento dentro de cada buffer especificado, sem haver grande preocupação com a fonte
 
 
 remove_duplicates <- function(points, distance_threshold, capacity_column, source_column) {
@@ -286,7 +286,7 @@ remove_duplicates <- function(points, distance_threshold, capacity_column, sourc
         nearby_capacities <- st_drop_geometry(points[nearby_points, ])[capacity_column]
         na_points <- nearby_points[is.na(nearby_capacities)] #points with NA capacity inside buffer
         lower_capacity <- nearby_points[which(nearby_capacities <= points[[capacity_column]][i] & !is.na(nearby_capacities))] #points with lower capacity than the evaluated one
-#       same_capacity <- nearby_points[which(nearby_capacities == points[[capacity_column]][i] & points[[source_column]][nearby_points] != points[[source_column]][i])] #points with same capacity but different sources
+#       different_source <- nearby_points[which(nearby_capacities == points[[capacity_column]][i] & points[[source_column]][nearby_points] != points[[source_column]][i])] #points with same capacity but different sources
         points_to_remove <- c(na_points, lower_capacity)
         removal_list[points_to_remove] <- TRUE
     }
