@@ -30,7 +30,6 @@ regions <- regions |> bind_rows(data.frame(
 ))
 
 
-
 for (i in 1:nrow(regions)) {
     base_folder <- regions$base_folder[i]
     url_base <- regions$url_base[i]

@@ -29,29 +29,54 @@ regions <- regions |> bind_rows(data.frame(
     base_folder = "data/collection/gbfs/bird_cascais",
     url_base = "https://mds.bird.co/gbfs/v2/public/cascais/"
 ))
+regions <- regions |> bind_rows(data.frame(
+    name = "Bird Almada",
+    base_folder = "data/collection/gbfs/bird_almada",
+    url_base = "https://mds.bird.co/gbfs/v2/public/almada-portugal/"
+))
+regions <- regions |> bind_rows(data.frame(
+    name = "Lime Almada",
+    base_folder = "data/collection/gbfs/lime_almada",
+    url_base = "https://data.lime.bike/api/partners/v1/gbfs/almada/"
+))
+regions <- regions |> bind_rows(data.frame(
+    name = "Lime Lisboa",
+    base_folder = "data/collection/gbfs/lime_lisboa",
+    url_base = "https://data.lime.bike/api/partners/v1/gbfs/lisbon/"
+))
+regions <- regions |> bind_rows(data.frame(
+    name = "Lime Oeiras",
+    base_folder = "data/collection/gbfs/lime_oeiras",
+    url_base = "https://data.lime.bike/api/partners/v1/gbfs/Oeiras/"
+))
 
 
-
-for (i in 1:nrow(regions)) {
+for (i in 1:nrow(regions)) { # i = 3
     base_folder <- regions$base_folder[i]
+    if (!dir.exists(base_folder)) dir.create(base_folder, recursive = TRUE)
     url_base <- regions$url_base[i]
     name <- regions$name[i]
 
     message(sprintf("Scrapping %s bike info...", name))
 
     vehicle_types <- read.csv(paste0(base_folder, "/vehicle_types.csv")) |>
-        select(id, vehicle_type_id)
+        select(any_of(c("id", "vehicle_type_id", "vehicle_type")))
 
     # 1. Get station status
-    free_bike_status <- jsonlite::fromJSON(paste0(url_base, "free_bike_status.json"))$data$bikes |>
-        left_join(vehicle_types |> rename(vehicle_type = id), by = "vehicle_type_id") |>
+    free_bike_status <- jsonlite::fromJSON(paste0(url_base, "free_bike_status.json"))$data$bikes
+    if ("vehicle_type_id" %in% names(free_bike_status)) {
+        free_bike_status <- free_bike_status |>
+            left_join(vehicle_types |> rename(vehicle_type = id), by = "vehicle_type_id")
+    } else if ("vehicle_type" %in% names(free_bike_status)) {
+        free_bike_status <- free_bike_status |>
+            left_join(vehicle_types, by = "vehicle_type") |>
+            select(-vehicle_type) |>
+            rename(vehicle_type = id)
+    }
+
+    free_bike_status <- free_bike_status |>
         # Remove GBFS ids
-        select(-bike_id, -vehicle_type_id) |>
-        mutate(
-            current_range_km = round(current_range_meters / 1000, 2),
-            current_fuel_percent = round(current_fuel_percent, 2)
-        ) |>
-        select(-current_range_meters)
+        select(lat, lon, vehicle_type)
 
     # summary(free_bike_status)
     # nrow(free_bike_status)
