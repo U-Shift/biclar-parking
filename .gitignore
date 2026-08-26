@@ -3,3 +3,4 @@ data/*
 .positai
 data
 .Rhistory
+*.log
