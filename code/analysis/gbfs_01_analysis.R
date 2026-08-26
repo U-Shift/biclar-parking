@@ -57,7 +57,10 @@ for (i in 1:nrow(GBFS_LIST)) { # i = 1
         n_updates = sum(n_updates),
         capacity = sum(capacity, na.rm = TRUE),
         bikes_rented = sum(bikes_rented, na.rm = TRUE),
-        bikes_returned = sum(bikes_returned, na.rm = TRUE)
+        bikes_returned = sum(bikes_returned, na.rm = TRUE),
+        bikes_n_max = sum(free_bikes_max, na.rm = TRUE),
+        docks_n_max = sum(free_docks_max, na.rm = TRUE),
+        occupancy_ratio_max = round(bikes_n_max / capacity * 100, 2)
       ) |>
       left_join(grid_analysis |> st_drop_geometry() |> select(gid, n_stations), by = "gid")
     # View(period_stats)
