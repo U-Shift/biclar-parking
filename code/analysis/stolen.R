@@ -154,3 +154,10 @@ grid_stolen <- grid |>
 mapview(grid_stolen |> filter(n_stolen > 0), zcol = "n_stolen")
 
 write.csv(grid_stolen |> st_drop_geometry() |> filter(n_stolen > 0), "data/analysis/stolen/stolen_bikes_grid.csv", row.names = FALSE)
+
+grid_stolen = read.csv("data/analysis/stolen/stolen_bikes_grid.csv")
+grid_stolen_sf = grid |> left_join(grid_stolen, by = "gid")
+
+mapview(municipalities, alpha.regions=0) +
+  mapview(grid_stolen_sf |> filter(n_stolen > 0), zcol = "n_stolen")
+
