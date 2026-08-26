@@ -17,6 +17,12 @@ mapview(municipalities, alpha.regions=0) +
 mapview(municipalities, alpha.regions=0) +
   mapview(data_grid, zcol="bikes_returned_capacity_ratio", layer.name = "Returned/capacity ratio", legend=TRUE)
 
+mapview(municipalities, alpha.regions=0) +
+  mapview(data_grid, zcol="bikes_n_max", layer.name = "Max nr bikes", legend=TRUE)
+
+mapview(municipalities, alpha.regions=0) +
+  mapview(data_grid, zcol="occupancy_ratio_max", layer.name = "Max bike occupancy", legend=TRUE)
+
 mapview(data_grid, zcol="n_stations", layer.name = "Number of stations", legend=TRUE) +
   mapview(data_grid, zcol="capacity", layer.name = "Capacity", legend=TRUE, hide=TRUE) +
   mapview(data_grid, zcol="bikes_rented", layer.name = "Bikes rented", legend=TRUE, hide = TRUE) +
