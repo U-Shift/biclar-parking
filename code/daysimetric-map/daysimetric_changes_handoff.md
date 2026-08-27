@@ -41,9 +41,6 @@ x <- sf::st_read("data/base/daysimetric/BGRI21_170.gpkg", quiet = TRUE)
 sf::st_write(x, "data/base/daysimetric/output.gpkg", delete_dsn = TRUE)
 ```
 
-Checkpoints (intermediate `.Rds` files) use `saveRDS()` / `readRDS()` directly instead
-of `impt_write()` / `impt_read()`.
-
 ---
 
 ## Files removed
@@ -116,6 +113,31 @@ Output is registered in `code/99_results_load.R`:
 grid_dasymetric     <- sf::st_read("data/base/daysimetric/grid_dasymetric_combined.gpkg", quiet = TRUE)
 grid_dasymetric_csv <- read.csv("data/base/daysimetric/grid_dasymetric_combined.csv")
 ```
+
+---
+
+## Parallelism and Checkpoint Management in `03_dasymetric_combined.R`
+
+### Multi-Core Parallel Processing (`future` + `furrr`)
+
+`03_dasymetric_combined.R` leverages `future` / `furrr` multisession workers
+(`plan(multisession, workers = N_WORKERS)`) to parallelise the heavy spatial intersection steps:
+1. Grid filtering across BGRI blocks.
+2. Clipping building footprints to the residential COS mask (chunked by 50k buildings).
+3. Computing building-volume fragments across H3 grid cells and BGRI blocks.
+
+`N_WORKERS` defaults to `8` (adjustable according to available CPU cores and RAM).
+Calls use `.options = furrr_options(seed = NULL)` to avoid false-positive RNG warnings from `furrr`.
+
+### Local Checkpoints (Fixing SSHFS Permissions)
+
+When working locally, the mounted `./data/` directory over SSHFS can be read-only or restricted, causing parallel workers to fail with *Permission denied* if attempting to create subfolders inside `data/base/daysimetric/`.
+
+To resolve this:
+- All intermediate `.Rds` chunk checkpoints are saved locally to `checkpoints/dasymetric_combined/` (inside the local repository root, excluded via `.gitignore`).
+- The directory is created by the main session before parallel dispatch using an absolute path.
+- If a run is cancelled or interrupted, re-running the script will detect the existing chunk `.Rds` files and skip already-processed chunks immediately.
+- Once the final output is produced, the local `checkpoints/` directory can be safely removed if desired.
 
 ---
 
