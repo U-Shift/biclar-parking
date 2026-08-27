@@ -95,6 +95,9 @@ for (p in 1:nrow(PERIODS)) { # p = 1
       capacity = sum(capacity, na.rm = TRUE),
       bikes_rented = sum(bikes_rented, na.rm = TRUE),
       bikes_returned = sum(bikes_returned, na.rm = TRUE),
+      bikes_n_max = sum(bikes_n_max, na.rm = TRUE),
+      docks_n_max = sum(docks_n_max, na.rm = TRUE),
+      occupancy_ratio_max = round(bikes_n_max / capacity * 100, 2),
       any_dockless = any(dockless),
       any_dock = !any(dockless)
     )
