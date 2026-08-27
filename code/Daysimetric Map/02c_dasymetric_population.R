@@ -36,8 +36,26 @@
 # none of us have actually opened the raw file's attribute table to confirm this directly.
 # A names(census_bgri) sanity check is included below (step 0) - stop and adjust the field
 # names throughout this script if it doesn't show what's expected.
+#
+# SERVER VARIANT - adapted to run on the shared team server (ushift@alfa), replacing this
+# project's own locally-generated grid with the team's canonical one:
+# - grid/parishes/municipalities are now loaded via source("code/00_data_load.R") instead of
+#   this project's own 01_data_prep_grid_only.R output - that script is no longer a
+#   dependency of this one at all. The loaded `grid` object's own id column is called
+#   `h3_address` (it also carries a separate `gid`, per the server's naming convention - see
+#   00_data_load.R's README) - renamed to `id` immediately after loading so none of the
+#   downstream logic (which joins/groups by `id` everywhere) needs to change.
+# - This server grid is a DIFFERENT, COARSER resolution than the r10 grid this script and
+#   its TEST_MODE validation were built against - 25,380 cells here vs ~182,000 before. See
+#   the loud warning at the TEST_MODE flag below: the ~1% Oeiras validation from the old
+#   grid does NOT carry over to this one and must be re-run before trusting a full run.
+# - BGRI, buildings-footprints, and cos_residential_aml now come from data/base/daysimetric/
+#   instead of data/original/, data/pois/, and data/geo/ respectively - matching where
+#   01c_cos_residential_prep.R and 02b_buildings_volume_prep.R now write their outputs on
+#   this server, and where this script's own outputs (checkpoints, final population layer)
+#   are written too.
 
-required_packages <- c("sf", "dplyr", "tidyr", "tibble", "future", "furrr")
+required_packages <- c("sf", "dplyr", "tidyr", "tibble", "future", "furrr", "mapview")
 missing_packages <- setdiff(required_packages, rownames(installed.packages()))
 if (length(missing_packages) > 0) install.packages(missing_packages)
 
@@ -47,26 +65,48 @@ library(tidyr)
 library(tibble)
 library(future)
 library(furrr)
+library(mapview) # loaded by code/00_data_load.R when sourced below - listed explicitly
+# here too so the install-guard above catches a missing install before that source() call
+# fails partway through.
 
 # PSOCK cluster via future's "multisession" plan - "multicore" (fork-based) isn't available
-# on Windows, so multisession is the correct choice here. Dropped from 6 to 2 workers after
-# an out-of-memory crash ("cannot allocate vector of size 11.7 GB") - each worker holds a
-# full copy of cos_residential_mask/grid_active/census_simple once exported, so 6 concurrent
-# workers meant 6 copies of those layers in memory at once, on top of the main process's own
-# copy. future_map2() below only ever runs as many chunks concurrently as N_WORKERS allows -
-# it does NOT dispatch all chunks at once regardless of worker count, so lowering this number
-# is itself the "process N at a time" behavior, no separate batching mechanism needed.
-# Released back to sequential at the end of the script.
+# on Windows, so multisession is the correct choice here. Dropped from 6 to 2 workers on the
+# original 16GB Windows machine after an out-of-memory crash ("cannot allocate vector of
+# size 11.7 GB") - each worker holds a full copy of cos_residential_mask/grid_active/
+# census_simple once exported, so N concurrent workers meant N copies of those layers in
+# memory at once, on top of the main process's own copy.
+#
+# Briefly bumped to 4 on this shared server (8 cores, ~23GB available), reverted back to 2
+# after a full-AML run silently died (no error, no checkpoints) right at the first
+# future_map2() dispatch in the script - the point where N fresh worker processes get spun
+# up and cos_residential_mask/the first batch get shipped to each, i.e. exactly where memory
+# pressure would spike hardest. A hard OS-level kill (e.g. the OOM-killer) wouldn't leave an
+# R-level error to diagnose, and this server doesn't allow checking dmesg/journalctl to
+# confirm it either way - so rather than guess at some value between 2 and 4, reverting to
+# 2 is the safe choice: it's the one value already confirmed to run reliably, just on a
+# machine with less RAM than this one, meaning it should have at least as much headroom here.
+# future_map2() below only ever runs as many chunks concurrently as N_WORKERS allows - it
+# does NOT dispatch all chunks at once regardless of worker count, so this number alone is
+# the "process N at a time" behavior, no separate batching mechanism needed. Released back
+# to sequential at the end of the script.
 N_WORKERS <- 2
 plan(multisession, workers = N_WORKERS)
 
 target_crs <- 3763 # Portugal metric CRS, matching 02_census_grid_with_cos.R convention
 
 # --- TEST MODE -----------------------------------------------------------
-# Set TEST_MODE <- FALSE to run the full AML dataset (633k+ buildings). While TEST_MODE is
-# TRUE, grid/buildings/BGRI/COS are all subset to a single municipality first, so you can
-# sanity-check that total_pop sums roughly match BGRI population totals fast, before
-# committing to the full run.
+# Set TEST_MODE <- TRUE to sanity-check total_pop sums roughly match BGRI population totals
+# fast, on a single municipality, before committing to a full run. While TRUE,
+# grid/buildings/BGRI/COS are all subset to TEST_MUNICIPIO first.
+#
+# REVALIDATION RECORD: the server's canonical grid (25,380 cells, loaded via
+# source("code/00_data_load.R")) is a different, coarser resolution than this project's own
+# r10 H3 grid (~182,000 cells) the original ~1% Oeiras validation was run against - a
+# different cell size changes how buildings/BGRI blocks get cut into fragments, so that old
+# validation could not be assumed to carry over automatically. Re-run and confirmed: Oeiras
+# on this server grid also comes out to ~1% total_pop-vs-BGRI agreement, same order of
+# accuracy as the original r10 validation. TEST_MODE restored to FALSE below accordingly -
+# this is no longer a pending action.
 TEST_MODE <- FALSE
 TEST_MUNICIPIO <- "Oeiras"
 
@@ -84,7 +124,19 @@ CHUNK_SIZE <- 50000
 # means re-running this whole script from the top: steps 1-3 (load/clean/reproject/COS-clip)
 # always redo, but those are far cheaper than the grid x building x BGRI intersection - only
 # that per-chunk loop actually gets skipped for chunks with an existing checkpoint.
-CHECKPOINT_DIR <- "/landuse/checkpoints"
+CHECKPOINT_DIR <- "/base/daysimetric/checkpoints"
+
+# CRITICAL FIX: checkpoint filenames must be TEST_MODE-aware. A TEST_MODE=TRUE run (e.g.
+# Oeiras, ~469 grid cells) and a full-AML run (25,380 grid cells) can both produce exactly
+# ONE chunk under CHUNK_SIZE=50000 - without a distinguishing suffix, both write/read the
+# exact same filename (e.g. "grid_active_chunk_001.Rds"), so a full run can silently reuse a
+# stale checkpoint computed against the wrong (TEST_MODE) grid instead of erroring or
+# recomputing - this actually happened: a full run reused last night's 469-cell Oeiras
+# grid_active checkpoint, producing suspiciously tiny downstream fragment outputs with no
+# error at all. `run_suffix` is used in every checkpoint filename below (residential_chunk,
+# grid_active_chunk, chunk) AND in the final export filename - one shared definition, used
+# everywhere a filename needs to distinguish a TEST_MODE run from a full run.
+run_suffix <- if (TEST_MODE) paste0("_test_", tolower(TEST_MUNICIPIO)) else ""
 
 # tryCatch-based existence check, using impt_read itself (consistent with the rest of the
 # pipeline's convention of never calling base file.exists()/readRDS() directly) - an error
@@ -94,20 +146,59 @@ read_checkpoint <- function(path) tryCatch(impt_read(path), error = function(e) 
 
 # 1. Load ---------------------------------------------------------------
 
-buildings <- impt_read("/pois/lisbon_metro_buildings_footprints.geojson")
-cos_residential_aml <- impt_read("/geo/cos_residential_aml.gpkg")
-grid <- impt_read("/geo/grelha_h3_r10.gpkg")
-census_bgri <- impt_read("/original/BGRI21_170.gpkg")
+# SERVER VARIANT: grid/parishes/municipalities come from the team's canonical loader, not
+# this project's own 01_data_prep_grid_only.R. source() runs that file's top-level code in
+# the current environment, which defines `grid`, `parishes`, `municipalities`,
+# `conversion_dicofre`, and `conversion_dicofre_weight` as global variables here - only
+# `grid` (and `municipalities`, used below in TEST_MODE) are actually used by this script;
+# the rest are simply along for the ride. Per that script's own header comment, it expects
+# to be sourced with the R working directory at the repo root (it uses plain relative paths
+# like "data/geo/grid.gpkg", not impt_read() - same working-directory assumption impt_read
+# makes, just without the /data/ prefix indirection, so nothing extra to configure here).
+source("code/00_data_load.R")
+
+# The loaded grid's own cell-id column is called h3_address (it also carries `gid`, unused
+# here) - renamed to `id` so every downstream join/group_by in this script (all written
+# against a column literally named `id`) works unchanged.
+grid <- grid |> rename(id = h3_address)
+
+buildings <- impt_read("/base/daysimetric/lisbon_metro_buildings_footprints.geojson")
+cos_residential_aml <- impt_read("/base/daysimetric/cos_residential_aml.gpkg")
+census_bgri <- impt_read("/base/daysimetric/BGRI21_170.gpkg")
+
+# PROGRESS INSTRUMENTATION - added after a full-AML run hung for 11+ hours with zero
+# console output and zero checkpoint files between BGRI loading and the residential-clip
+# loop. Every step between here and that loop now reports start/finish + elapsed time, so
+# the next attempt shows exactly which step is slow/stuck instead of going dark. Leading
+# suspects: st_make_valid() on the full 633k-building set (run twice - once here, once
+# again after reprojection below) and st_union() dissolving the residential COS layer into
+# one polygon, further down - both are single-threaded GEOS operations with no built-in
+# progress reporting that can legitimately take a very long time on large polygon counts.
 
 # Fix invalid geometries right at load time, before any spatial predicate (bracket
 # subsetting, st_intersects, st_intersection) touches them. This is what surfaced the
 # "Loop 0 is not valid: Edge 5 is degenerate (duplicate vertex)" error during TEST MODE
 # subsetting - it can equally occur later in the real intersection steps for any of these
 # layers, not just municipios, so all four get fixed here defensively.
+message(sprintf("[prep] st_make_valid(buildings) starting (%d rows) - a prime suspect for the 11-hour hang", nrow(buildings)))
+step_start <- Sys.time()
 buildings <- st_make_valid(buildings)
+message(sprintf("[prep] st_make_valid(buildings) done in %.1f min", as.numeric(difftime(Sys.time(), step_start, units = "mins"))))
+
+message(sprintf("[prep] st_make_valid(cos_residential_aml) starting (%d rows)", nrow(cos_residential_aml)))
+step_start <- Sys.time()
 cos_residential_aml <- st_make_valid(cos_residential_aml)
+message(sprintf("[prep] st_make_valid(cos_residential_aml) done in %.1f min", as.numeric(difftime(Sys.time(), step_start, units = "mins"))))
+
+message(sprintf("[prep] st_make_valid(grid) starting (%d rows)", nrow(grid)))
+step_start <- Sys.time()
 grid <- st_make_valid(grid)
+message(sprintf("[prep] st_make_valid(grid) done in %.1f min", as.numeric(difftime(Sys.time(), step_start, units = "mins"))))
+
+message(sprintf("[prep] st_make_valid(census_bgri) starting (%d rows)", nrow(census_bgri)))
+step_start <- Sys.time()
 census_bgri <- st_make_valid(census_bgri)
+message(sprintf("[prep] st_make_valid(census_bgri) done in %.1f min", as.numeric(difftime(Sys.time(), step_start, units = "mins"))))
 
 # Step 0 - schema sanity check (see IMPORTANT note above)
 names(census_bgri)
@@ -117,8 +208,55 @@ stopifnot(
 )
 
 if (TEST_MODE) {
-  # municipios_2024.gpkg comes from 01_data_prep_grid_only.R - has a "municipio" column
-  municipios <- impt_read("/geo/municipios_2024.gpkg") |> st_make_valid()
+  # SERVER VARIANT: `municipalities` now comes from source("code/00_data_load.R") above,
+  # not this project's own municipios_2024.gpkg (produced by 01_data_prep_grid_only.R,
+  # which is no longer a dependency of this script at all). Confirmed: this layer only
+  # carries mid/area_km2/geom - no human-readable name column, unlike this project's own
+  # CAOP-derived layer which had one called "municipio". Names live separately, in
+  # useful_data/municipalities.csv (mid, name, nid, area_km2) - joined in below by `mid`.
+  # Still fails loudly (rather than silently producing an all-NA municipio column) if that
+  # lookup table is ever missing, restructured, or doesn't actually contain TEST_MUNICIPIO -
+  # same principle as the COS schema check in 01c_cos_residential_prep.R.
+  if (!"municipio" %in% names(municipalities)) {
+    municipio_lookup <- impt_read("municipalities.csv", root = "useful_data")
+
+    if (!all(c("mid", "name") %in% names(municipio_lookup))) {
+      stop(sprintf(
+        paste(
+          "useful_data/municipalities.csv is missing 'mid' and/or 'name'",
+          "(columns found: %s). This is the lookup table `municipalities` (from",
+          "00_data_load.R) relies on for human-readable names, since that layer itself",
+          "only carries mid/area_km2/geom. Update this block if the lookup table's",
+          "schema has changed.",
+          sep = " "
+        ),
+        paste(names(municipio_lookup), collapse = ", ")
+      ))
+    }
+
+    # Coerce both join keys to character defensively - an integer/character mismatch
+    # between the sf layer's `mid` and the CSV's `mid` would otherwise fail the join
+    # (or silently match nothing) without necessarily raising an obvious error.
+    municipalities <- municipalities |>
+      mutate(mid = as.character(mid)) |>
+      left_join(
+        municipio_lookup |> mutate(mid = as.character(mid)) |> select(mid, municipio = name),
+        by = "mid"
+      )
+
+    if (!TEST_MUNICIPIO %in% municipalities$municipio) {
+      stop(sprintf(
+        paste(
+          "TEST_MUNICIPIO '%s' not found among municipality names after joining",
+          "useful_data/municipalities.csv onto `municipalities` (available names: %s).",
+          "Check for a naming mismatch (accents, capitalization) before proceeding.",
+          sep = " "
+        ),
+        TEST_MUNICIPIO, paste(sort(unique(municipalities$municipio)), collapse = ", ")
+      ))
+    }
+  }
+  municipios <- municipalities |> st_make_valid()
   test_boundary <- municipios |> filter(municipio == TEST_MUNICIPIO)
   stopifnot(nrow(test_boundary) == 1) # confirm TEST_MUNICIPIO matched exactly one polygon
 
@@ -176,19 +314,85 @@ buildings <- buildings |>
 # gets converted back to 4326 before being written to disk at the very end, matching how
 # every other geo output in this project is stored.
 
-buildings <- st_transform(buildings, target_crs) |> st_make_valid()
+# Geometry validity was already fixed once, right after load above - a CRS reprojection is
+# a coordinate-wise transform and doesn't reintroduce topology problems (self-intersections,
+# duplicate vertices, etc.), so re-running st_make_valid() here on buildings/census_bgri was
+# pure redundant work on the largest objects in the pipeline (633k buildings). REMOVED - not
+# just for efficiency: the load-time pass is also the one TEST_MODE actually depends on, since
+# TEST_MODE's bracket subsetting (further up, `buildings[test_boundary, ]` etc.) runs BEFORE
+# this reprojection block - dropping the load-time pass instead and keeping only this one
+# would have silently reintroduced the original "Loop 0 is not valid" bug for TEST_MODE runs.
+
+message(sprintf("[prep] st_transform(buildings) starting (%d rows)", nrow(buildings)))
+step_start <- Sys.time()
+buildings <- st_transform(buildings, target_crs)
+message(sprintf("[prep] st_transform(buildings) done in %.1f min", as.numeric(difftime(Sys.time(), step_start, units = "mins"))))
+
+message(sprintf("[prep] st_transform(grid) starting (%d rows)", nrow(grid)))
+step_start <- Sys.time()
 grid <- st_transform(grid, target_crs)
-census_bgri <- st_transform(census_bgri, target_crs) |> st_make_valid()
+message(sprintf("[prep] st_transform(grid) done in %.1f min", as.numeric(difftime(Sys.time(), step_start, units = "mins"))))
+
+message(sprintf("[prep] st_transform(census_bgri) starting (%d rows)", nrow(census_bgri)))
+step_start <- Sys.time()
+census_bgri <- st_transform(census_bgri, target_crs)
+message(sprintf("[prep] st_transform(census_bgri) done in %.1f min", as.numeric(difftime(Sys.time(), step_start, units = "mins"))))
 
 # Residential COS zones, dissolved into a single geometry mask (no class weighting anymore,
 # only used as a residential/non-residential spatial filter, so per-class attributes aren't
 # needed - this also keeps the intersection below fast, since buildings_residential ends up
 # with no extra COS columns to carry through).
+message(sprintf("[prep] cos_residential_mask: transform + st_make_valid starting (%d rows)", nrow(cos_residential_aml)))
+step_start <- Sys.time()
 cos_residential_mask <- cos_residential_aml |>
   st_transform(target_crs) |>
-  st_make_valid() |>
-  st_union() |>
   st_make_valid()
+message(sprintf("[prep] cos_residential_mask: transform + st_make_valid done in %.1f min", as.numeric(difftime(Sys.time(), step_start, units = "mins"))))
+
+message("[prep] cos_residential_mask: st_union() starting - dissolving the whole residential COS layer into one polygon, a prime suspect for the 11-hour hang")
+step_start <- Sys.time()
+cos_residential_mask <- cos_residential_mask |> st_union()
+message(sprintf(
+  "[prep] cos_residential_mask: st_union() done in %.1f min - result geometry type: %s",
+  as.numeric(difftime(Sys.time(), step_start, units = "mins")),
+  paste(unique(st_geometry_type(cos_residential_mask)), collapse = ", ")
+))
+
+# ROOT CAUSE FOUND: st_union() here was producing a GEOMETRYCOLLECTION, not a clean
+# POLYGON/MULTIPOLYGON - this traces back to COS_GLPS_LAND.gpkg itself loading with mixed/
+# ambiguous geometry (see the same fix applied at the source, right after loading that file,
+# in 01c_cos_residential_prep.R). st_intersection() against a GEOMETRYCOLLECTION is known to
+# be slower/less predictable in GEOS than against clean polygons - this is what was actually
+# behind the residential-clip loop running far slower here than it did locally, not merely a
+# "heavier COS data" difference. Extracting polygonal parts again here too (even though
+# 01c should now prevent it upstream) since this script has no guarantee it's being run
+# against a cos_residential_aml.gpkg regenerated with that fix - cheap insurance either way.
+if (!all(st_geometry_type(cos_residential_mask) %in% c("POLYGON", "MULTIPOLYGON"))) {
+  message("[prep] cos_residential_mask: non-polygon geometry after st_union() - extracting polygonal parts via st_collection_extract('POLYGON')")
+  cos_residential_mask <- st_collection_extract(cos_residential_mask, "POLYGON")
+}
+
+message("[prep] cos_residential_mask: final st_make_valid() starting")
+step_start <- Sys.time()
+cos_residential_mask <- cos_residential_mask |> st_make_valid()
+message(sprintf("[prep] cos_residential_mask: final st_make_valid() done in %.1f min - prep sequence complete, entering residential-clip loop next", as.numeric(difftime(Sys.time(), step_start, units = "mins"))))
+
+# DIAGNOSTIC - complexity check on cos_residential_mask, to compare against whatever ran
+# locally. st_union() collapses it to a single feature (nrow will always be 1 after this
+# point), so the number of rows says nothing about complexity - vertex count and object
+# size are what actually matter for how expensive st_intersection() against it will be.
+# st_coordinates() returns one row per vertex across every ring/part of the geometry, so
+# nrow() on that is the total vertex count - cheap relative to the operations already timed
+# above, but on a genuinely enormous geometry this itself could take a moment.
+# CONFIRMED: st_coordinates() does not work on a GEOMETRYCOLLECTION (this diagnostic would
+# have errored before reaching here, on the original bug). No fix needed here specifically -
+# resolves on its own now that cos_residential_mask is guaranteed POLYGON/MULTIPOLYGON by
+# the st_collection_extract() step above, which runs before this point.
+message(sprintf(
+  "[prep] cos_residential_mask complexity: %d vertices, %s in memory",
+  nrow(st_coordinates(cos_residential_mask)),
+  format(object.size(cos_residential_mask), units = "auto")
+))
 
 # 2. Clip buildings to residential zones only --------------------------------
 # Chunked and parallelized across N_WORKERS PSOCK workers - observed to run over an hour
@@ -219,6 +423,26 @@ if (TEST_MODE) {
   })
 }
 
+# DIAGNOSTIC - added after a full-AML run silently returned to the console prompt right at
+# this loop, with no error and zero checkpoints written. Confirms n_residential_chunks and
+# residential_batches actually contain what's expected before dispatch - if n_buildings_raw
+# were ever 0 (e.g. buildings failed to load/got emptied upstream), ceiling(0/CHUNK_SIZE) is
+# 0, seq_len(0) is integer(0), and residential_batches would silently be an empty list -
+# future_map2() over zero elements returns an empty list with no error and no iterations,
+# which would exactly match "no checkpoints, no error, execution just continues/ends".
+message(sprintf(
+  "[prep] n_buildings_raw = %d, CHUNK_SIZE = %d, n_residential_chunks = %d, length(residential_batches) = %d",
+  n_buildings_raw, CHUNK_SIZE, n_residential_chunks, length(residential_batches)
+))
+if (length(residential_batches) > 0) {
+  message(sprintf(
+    "[prep] residential_batches row counts: %s",
+    paste(vapply(residential_batches, nrow, integer(1)), collapse = ", ")
+  ))
+} else {
+  message("[prep] WARNING: residential_batches is empty - the loop below will do nothing.")
+}
+
 # One call to this function = one chunk's worth of work, run inside a worker process. Given
 # a chunk index `i` (for naming its checkpoint file) and that chunk's slice of buildings, it
 # either reloads a previously-completed result or computes fresh, always returning a small
@@ -228,17 +452,39 @@ process_residential_chunk <- function(i, buildings_batch) {
   library(sf)
   library(dplyr)
 
-  checkpoint_path <- sprintf("%s/residential_chunk_%03d.Rds", CHECKPOINT_DIR, i)
+  checkpoint_path <- sprintf("%s/residential_chunk%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
   checkpoint <- read_checkpoint(checkpoint_path)
 
   if (!is.null(checkpoint)) {
     return(list(chunk = checkpoint, n_input = nrow(buildings_batch), elapsed_sec = 0, from_checkpoint = TRUE))
   }
 
+  # DIAGNOSTIC - message() alone is NOT enough here: a worker's message() output only gets
+  # relayed back to the main session's console when the future actually resolves (i.e. when
+  # future_map2() finishes collecting it) - if you interrupt/kill the process before that,
+  # whatever a worker "said" is lost with it, never having reached the console at all. So
+  # this also writes directly to a log file - real disk I/O from this worker process,
+  # independent of future's result-capture pipeline - meaning a "starting" line is safely on
+  # disk the instant it's written, even if the process is killed a second later. After an
+  # interrupt, check this chunk's log file: a "starting" line with no matching "done" line
+  # pinpoints that this specific chunk's st_intersection() call is the one still running.
+  log_path <- sprintf("data%s/residential_chunk%s_%03d_log.txt", CHECKPOINT_DIR, run_suffix, i)
+  log_dir <- dirname(log_path)
+  if (!dir.exists(log_dir)) dir.create(log_dir, recursive = TRUE)
+  log_line <- function(msg) cat(sprintf("[%s] %s\n", format(Sys.time()), msg), file = log_path, append = TRUE)
+
+  message(sprintf("[chunk %d] st_intersection() starting (%d buildings vs cos_residential_mask)", i, nrow(buildings_batch)))
+  log_line(sprintf("chunk %d: st_intersection() starting (%d buildings vs cos_residential_mask)", i, nrow(buildings_batch)))
+
   batch_start_time <- Sys.time()
   # st_intersection naturally returns a zero-row (not NULL) sf object when nothing matches,
   # so no NULL-sentinel handling is needed here the way the fragments loop below needs one.
   result <- st_intersection(buildings_batch, cos_residential_mask)
+  intersection_elapsed <- as.numeric(difftime(Sys.time(), batch_start_time, units = "mins"))
+
+  message(sprintf("[chunk %d] st_intersection() done in %.1f min (%d result rows)", i, intersection_elapsed, nrow(result)))
+  log_line(sprintf("chunk %d: st_intersection() done in %.1f min (%d result rows)", i, intersection_elapsed, nrow(result)))
+
   impt_write(result, checkpoint_path)
 
   out <- list(
@@ -248,22 +494,45 @@ process_residential_chunk <- function(i, buildings_batch) {
     from_checkpoint = FALSE
   )
 
-  # With only 2 workers, each one still processes several chunks sequentially within this
-  # stage (not just once) - gc() here is a defensive addition beyond what was asked, to keep
-  # a worker's own memory from creeping up across its several assigned chunks, not only
-  # between the two stages (that part is the explicit gc() calls after each future_map2()
-  # below, which run in the main process instead).
+  # With N_WORKERS well below the total chunk count, each worker still processes several
+  # chunks sequentially within this stage (not just once) - gc() here is a defensive addition
+  # beyond what was asked, to keep a worker's own memory from creeping up across its several
+  # assigned chunks, not only between the two stages (that part is the explicit gc() calls
+  # after each future_map2() below, which run in the main process instead).
   rm(buildings_batch, result)
   gc()
 
   out
 }
 
+# DIAGNOSTIC - the tryCatch below surfaces any R-level error a worker throws (e.g. a bad
+# geometry in st_intersection, a checkpoint write failure) with an explicit message instead
+# of it getting lost in future's own error-wrapping. IMPORTANT LIMITATION: this can only
+# catch genuine R errors - it cannot catch or explain a hard process kill (e.g. the OS's
+# OOM-killer sending SIGKILL if spinning up N_WORKERS fresh worker processes and shipping
+# cos_residential_mask/each batch to them pushes memory over the edge right at this point,
+# which is a very plausible cause for "silently returns to the shell prompt, no R error at
+# all" specifically - this was in fact seen once already with N_WORKERS=4, before it was
+# reverted to 2). The "[prep] dispatching..." message below at least confirms the
+# process was still alive immediately before the call - if that prints but "returned" never
+# does on the next attempt, that's evidence for a kill during this call, not an R error.
+message(sprintf(
+  "[prep] dispatching %d residential-clip chunk(s) to %d workers now...",
+  n_residential_chunks, N_WORKERS
+))
 residential_wall_start <- Sys.time()
-residential_results <- future_map2(
-  seq_len(n_residential_chunks), residential_batches,
-  process_residential_chunk
+residential_results <- tryCatch(
+  future_map2(
+    seq_len(n_residential_chunks), residential_batches,
+    process_residential_chunk
+  ),
+  error = function(e) {
+    message("[prep] future_map2() raised an error during the residential-clip stage:")
+    message(conditionMessage(e))
+    stop(e) # re-throw - halt here with a clear message rather than silently continuing
+  }
 )
+message("[prep] future_map2() for residential-clip returned successfully")
 residential_wall_elapsed <- round(difftime(Sys.time(), residential_wall_start, units = "mins"), 1)
 
 # Reported in order after the parallel batch completes - can't stream progress live across
@@ -326,7 +595,7 @@ if (TEST_MODE) {
 process_grid_filter_chunk <- function(i, grid_batch) {
   library(sf)
 
-  checkpoint_path <- sprintf("%s/grid_active_chunk_%03d.Rds", CHECKPOINT_DIR, i)
+  checkpoint_path <- sprintf("%s/grid_active_chunk%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
   checkpoint <- read_checkpoint(checkpoint_path)
 
   if (!is.null(checkpoint)) {
@@ -460,7 +729,7 @@ process_fragment_chunk <- function(i, buildings_batch) {
   library(sf)
   library(dplyr)
 
-  checkpoint_path <- sprintf("%s/chunk_%03d.Rds", CHECKPOINT_DIR, i)
+  checkpoint_path <- sprintf("%s/chunk%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
   checkpoint <- read_checkpoint(checkpoint_path)
 
   if (!is.null(checkpoint)) {
@@ -498,8 +767,8 @@ process_fragment_chunk <- function(i, buildings_batch) {
     from_checkpoint = FALSE
   )
 
-  # Same defensive per-chunk gc() as the residential-clip worker above - each of the 2
-  # workers processes several chunks sequentially within this stage.
+  # Same defensive per-chunk gc() as the residential-clip worker above - each worker
+  # processes several chunks sequentially within this stage.
   rm(buildings_batch, grid_buildings_batch, result)
   gc()
 
@@ -599,8 +868,12 @@ message(sprintf("Difference (BGRI - grid):                      %s (%.2f%%)", fo
 
 # 9. Export ---------------------------------------------------------------
 # Test-mode output goes to a distinct path so it can never be confused with, or accidentally
-# overwrite, a full-AML run's output.
+# overwrite, a full-AML run's output. SERVER VARIANT: written under /base/daysimetric/ (not
+# /landuse/) - matching where every other derived output in this workflow now lives.
+# Reuses `run_suffix` (defined once, near CHECKPOINT_DIR) rather than redefining the same
+# TEST_MODE/TEST_MUNICIPIO logic a second time here - this was previously its own separate
+# `output_suffix` variable with identical logic, which is exactly the kind of duplication
+# that let the checkpoint filenames drift out of sync with this one in the first place.
 
-output_suffix <- if (TEST_MODE) paste0("_test_", tolower(TEST_MUNICIPIO)) else ""
-impt_write(grid_final, sprintf("/landuse/grid_dasymetric_population%s.gpkg", output_suffix))
-impt_write(grid_final |> st_drop_geometry(), sprintf("/landuse/grid_dasymetric_population%s.csv", output_suffix))
+impt_write(grid_final, sprintf("/base/daysimetric/grid_dasymetric_population%s.gpkg", run_suffix))
+impt_write(grid_final |> st_drop_geometry(), sprintf("/base/daysimetric/grid_dasymetric_population%s.csv", run_suffix))

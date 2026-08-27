@@ -13,15 +13,21 @@
 #
 # Differences from the original script:
 # - bbox extended from the hardcoded Lisbon-only box c(-9.50, 38.40, -8.70, 39.10) to the
-#   full AML extent, derived from municipios_union_2024.geojson (produced by
-#   01_data_prep_grid_only.R). The original hardcoded bbox was found to exclude most of
-#   Montijo's land area (its eastern zone, ~291.6 km2) and sat right at the edge for
-#   Sintra/Mafra/Palmela - see earlier coverage check.
+#   full AML extent. The original hardcoded bbox was found to exclude most of Montijo's land
+#   area (its eastern zone, ~291.6 km2) and sat right at the edge for Sintra/Mafra/Palmela -
+#   see earlier coverage check.
+# - SERVER VARIANT: the AML boundary itself now comes from data/geo/municipalities_union.gpkg
+#   (a server-provided file) instead of this project's own municipios_union_2024.geojson,
+#   since 01_data_prep_grid_only.R (which produced that file) is no longer part of this
+#   workflow on the shared server - see 02c_dasymetric_population.R for the equivalent
+#   change there.
 # - Keeps building POLYGON geometry (footprints) instead of collapsing to point centroids -
 #   needed for area-overlap-based dasymetric disaggregation against the H3 grid and BGRI.
-# - Writes to a NEW file, lisbon_metro_buildings_footprints.geojson. Does NOT touch or
-#   overwrite lisbon_metro_buildings_height.geojson, which 02_jobs_imob.R still depends on
-#   (odjitter needs points, not polygons, for its subpoints_origins/destinations argument).
+# - SERVER VARIANT: writes to data/base/daysimetric/lisbon_metro_buildings_footprints.geojson
+#   rather than /pois/ - matching where 02c_dasymetric_population.R now reads it from, and
+#   this project's other derived outputs on the server. Still does NOT touch or overwrite
+#   lisbon_metro_buildings_height.geojson, which 02_jobs_imob.R still depends on (odjitter
+#   needs points, not polygons, for its subpoints_origins/destinations argument).
 # - No download/unzip block needed: this reads live from the public S3 parquet source via
 #   DuckDB's httpfs extension, same as the original script - nothing to pre-fetch locally.
 
@@ -44,7 +50,7 @@ library(dplyr)
 # matches anything and drops out of the final result - it's filtered out downstream, not
 # something this script needs to handle itself.
 
-aml_boundary <- impt_read("/geo/municipios_union_2024.geojson")
+aml_boundary <- impt_read("/geo/municipalities_union.gpkg")
 aml_bbox <- st_bbox(aml_boundary)
 aml_bbox # sanity check before querying - compare against the coverage check we did earlier
 
@@ -150,5 +156,6 @@ summary(aml_buildings_footprints$height)
 summary(aml_buildings_footprints$volume_m3)
 
 # export ---------------------------------------------------------------
+# SERVER VARIANT: written under /base/daysimetric/ (not /pois/) - see header note above.
 
-impt_write(aml_buildings_footprints, "/pois/lisbon_metro_buildings_footprints.geojson")
+impt_write(aml_buildings_footprints, "/base/daysimetric/lisbon_metro_buildings_footprints.geojson")
