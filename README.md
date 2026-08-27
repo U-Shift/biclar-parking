@@ -12,8 +12,9 @@ Data should not be synced with GitHub. Instead, we use `/data/biclar-parking` fo
 
 ```bash
 # Adjust the location below to the location of the repository on your personal folder
-$ cd ~/Repos/biclar-parking
-$ mount --bind /data/biclar-parking ./data
+$ cd ~/REPOS-FOLDER/biclar-parking
+$ mkdir data
+$ sudo mount --bind /data/biclar-parking ./data
 ```
 
 ### Locally
