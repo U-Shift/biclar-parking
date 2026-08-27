@@ -75,7 +75,7 @@
 
 # 0. Setup ---------------------------------------------------------------
 
-required_packages <- c("sf", "dplyr", "tidyr", "tibble", "mapview")
+required_packages <- c("sf", "dplyr", "tidyr", "tibble", "future", "furrr", "mapview")
 missing_packages  <- setdiff(required_packages, rownames(installed.packages()))
 if (length(missing_packages) > 0) install.packages(missing_packages)
 
@@ -83,6 +83,8 @@ library(sf)
 library(dplyr)
 library(tidyr)
 library(tibble)
+library(future)
+library(furrr)
 library(mapview)
 
 # Run this script from the repo root (biclar-parking/) so all relative paths
@@ -93,6 +95,13 @@ stopifnot(
 )
 
 # --- Configuration flags ---
+
+# Parallelism — safe to use because checkpoints are written to a LOCAL directory
+# (checkpoints/dasymetric_combined/), not to the sshfs-mounted data/ folder.
+# With 28 cores and ~107 GB free RAM, 8 workers is a conservative choice;
+# raise to 12-14 if RAM stays below 80 GB during the first few chunks.
+N_WORKERS <- 8
+plan(multisession, workers = N_WORKERS)
 
 target_crs <- 3763  # EPSG:3763 — Portugal metric CRS
 
@@ -311,29 +320,29 @@ grid_filter_batches <- if (TEST_MODE) {
   })
 }
 
-# Run chunks sequentially with per-chunk progress reporting.
-# Re-running the script from the top will skip completed chunks (checkpoint exists).
-grid_active_chunks <- vector("list", n_grid_chunks)
-for (i in seq_len(n_grid_chunks)) {
-  grid_batch <- grid_filter_batches[[i]]
+run_grid_filter_chunk <- function(i, grid_batch) {
+  library(sf)
   ckpt <- sprintf("%s/grid_active%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
   cached <- read_checkpoint(ckpt)
   if (!is.null(cached)) {
     message(sprintf("[grid filter %d/%d] checkpoint found", i, n_grid_chunks))
-    grid_active_chunks[[i]] <- cached
-  } else {
-    t0 <- Sys.time()
-    hits   <- st_intersects(grid_batch, census_bgri, sparse = TRUE)
-    result <- grid_batch[lengths(hits) > 0, ]
-    write_checkpoint(result, ckpt)
-    message(sprintf("[grid filter %d/%d] %d -> %d active cells (%.1fs)",
-      i, n_grid_chunks, nrow(grid_batch), nrow(result),
-      as.numeric(difftime(Sys.time(), t0, units = "secs"))))
-    grid_active_chunks[[i]] <- result
+    return(cached)
   }
+  t0 <- Sys.time()
+  hits   <- st_intersects(grid_batch, census_bgri, sparse = TRUE)
+  result <- grid_batch[lengths(hits) > 0, ]
+  write_checkpoint(result, ckpt)
+  message(sprintf("[grid filter %d/%d] %d -> %d active cells (%.1fs)",
+    i, n_grid_chunks, nrow(grid_batch), nrow(result),
+    as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+  result
 }
-grid_active <- bind_rows(grid_active_chunks)
-rm(grid_active_chunks, grid_filter_batches)
+grid_active <- bind_rows(future_map2(
+  seq_len(n_grid_chunks), grid_filter_batches,
+  run_grid_filter_chunk,
+  .options = furrr_options(seed = NULL)
+))
+rm(grid_filter_batches)
 gc()
 message(sprintf("[grid] Active cells: %d / %d", nrow(grid_active), n_grid_raw))
 
@@ -358,30 +367,31 @@ residential_batches <- if (TEST_MODE) {
   })
 }
 
-message(sprintf("[bldg] Clipping %d buildings to COS mask (%d chunks)...",
-  n_bldg_raw, n_residential_chunks))
-residential_chunks <- vector("list", n_residential_chunks)
-for (i in seq_len(n_residential_chunks)) {
-  buildings_batch <- residential_batches[[i]]
+message(sprintf("[bldg] Clipping %d buildings to COS mask (%d chunks, %d workers)...",
+  n_bldg_raw, n_residential_chunks, N_WORKERS))
+run_residential_chunk <- function(i, buildings_batch) {
+  library(sf)
   ckpt <- sprintf("%s/residential%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
   cached <- read_checkpoint(ckpt)
   if (!is.null(cached)) {
     message(sprintf("[bldg clip %d/%d] checkpoint found (%d buildings)",
       i, n_residential_chunks, nrow(cached)))
-    residential_chunks[[i]] <- cached
-  } else {
-    t0 <- Sys.time()
-    result <- st_intersection(buildings_batch, cos_residential_mask)
-    write_checkpoint(result, ckpt)
-    message(sprintf("[bldg clip %d/%d] %d -> %d residential fragments (%.1fs)",
-      i, n_residential_chunks, nrow(buildings_batch), nrow(result),
-      as.numeric(difftime(Sys.time(), t0, units = "secs"))))
-    residential_chunks[[i]] <- result
+    return(cached)
   }
-  rm(buildings_batch); gc()
+  t0 <- Sys.time()
+  result <- st_intersection(buildings_batch, cos_residential_mask)
+  write_checkpoint(result, ckpt)
+  message(sprintf("[bldg clip %d/%d] %d -> %d residential fragments (%.1fs)",
+    i, n_residential_chunks, nrow(buildings_batch), nrow(result),
+    as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+  result
 }
-buildings_residential <- bind_rows(residential_chunks)
-rm(residential_chunks, residential_batches, buildings, cos_residential_mask)
+buildings_residential <- bind_rows(future_map2(
+  seq_len(n_residential_chunks), residential_batches,
+  run_residential_chunk,
+  .options = furrr_options(seed = NULL)
+))
+rm(residential_batches, buildings, cos_residential_mask)
 gc()
 message(sprintf("[bldg] Residential buildings after COS clip: %d", nrow(buildings_residential)))
 
@@ -404,52 +414,55 @@ fragment_batches <- if (TEST_MODE) {
   })
 }
 
-message(sprintf("[frags] Volume fragments: %d chunks...", n_chunks))
+message(sprintf("[frags] Volume fragments: %d chunks across %d workers...", n_chunks, N_WORKERS))
 t_wall <- Sys.time()
-fragment_chunks <- vector("list", n_chunks)
-for (i in seq_len(n_chunks)) {
-  buildings_batch <- fragment_batches[[i]]
+run_fragment_chunk <- function(i, buildings_batch) {
+  library(sf)
+  library(dplyr)
   ckpt <- sprintf("%s/vol_fragments%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
   cached <- read_checkpoint(ckpt)
   if (!is.null(cached)) {
     message(sprintf("[frags %d/%d] checkpoint found", i, n_chunks))
-    fragment_chunks[[i]] <- cached
+    return(cached)
+  }
+  t0 <- Sys.time()
+  grid_bldg <- st_intersection(grid_active, buildings_batch)
+  result <- if (nrow(grid_bldg) == 0) {
+    empty_vol_frags
   } else {
-    t0 <- Sys.time()
-    grid_bldg <- st_intersection(grid_active, buildings_batch)
-    result <- if (nrow(grid_bldg) == 0) {
+    frags <- st_intersection(grid_bldg, census_simple)
+    if (nrow(frags) == 0) {
       empty_vol_frags
     } else {
-      frags <- st_intersection(grid_bldg, census_simple)
-      if (nrow(frags) == 0) {
-        empty_vol_frags
-      } else {
-        frags$fragment_area <- as.numeric(st_area(frags))
-        frags |>
-          st_drop_geometry() |>
-          mutate(frag_volume = building_volume_m3 * (fragment_area / building_footprint_m2)) |>
-          select(id, BGRI2021, frag_volume)
-      }
+      frags$fragment_area <- as.numeric(st_area(frags))
+      frags |>
+        st_drop_geometry() |>
+        mutate(frag_volume = building_volume_m3 * (fragment_area / building_footprint_m2)) |>
+        select(id, BGRI2021, frag_volume)
     }
-    write_checkpoint(result, ckpt)
-    message(sprintf("[frags %d/%d] %d buildings -> %d fragments (%.1fs)",
-      i, n_chunks, nrow(buildings_batch), nrow(result),
-      as.numeric(difftime(Sys.time(), t0, units = "secs"))))
-    rm(buildings_batch, grid_bldg); gc()
-    fragment_chunks[[i]] <- result
   }
+  write_checkpoint(result, ckpt)
+  message(sprintf("[frags %d/%d] %d buildings -> %d fragments (%.1fs)",
+    i, n_chunks, nrow(buildings_batch), nrow(result),
+    as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+  result
 }
+vol_frags_raw <- bind_rows(future_map2(
+  seq_len(n_chunks), fragment_batches,
+  run_fragment_chunk,
+  .options = furrr_options(seed = NULL)
+))
 message(sprintf("[frags] Done in %.1f min",
   as.numeric(difftime(Sys.time(), t_wall, units = "mins"))))
 
 # Aggregate to (id × BGRI2021) — unnormalised; normalisation happens at step 10.
-vol_weights <- bind_rows(fragment_chunks) |>
+vol_weights <- vol_frags_raw |>
   group_by(id, BGRI2021) |>
   summarise(vol_weight = sum(frag_volume, na.rm = TRUE), .groups = "drop") |>
   filter(vol_weight > 0)
 
 message(sprintf("[frags] (id × BGRI) pairs with building volume > 0: %d", nrow(vol_weights)))
-rm(fragment_chunks, fragment_batches, buildings_residential, empty_vol_frags)
+rm(vol_frags_raw, fragment_batches, buildings_residential, empty_vol_frags)
 gc()
 
 
@@ -572,6 +585,7 @@ gc()
 
 # 12. Join population table to H3 grid geometry --------------------------
 
+plan(sequential)  # release parallel workers
 message("[output] Joining population table to H3 grid geometry...")
 
 grid_final <- grid |>
