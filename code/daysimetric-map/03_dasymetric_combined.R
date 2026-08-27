@@ -76,7 +76,7 @@
 # 0. Setup ---------------------------------------------------------------
 
 required_packages <- c("sf", "dplyr", "tidyr", "tibble", "future", "furrr", "mapview")
-missing_packages  <- setdiff(required_packages, rownames(installed.packages()))
+missing_packages <- setdiff(required_packages, rownames(installed.packages()))
 if (length(missing_packages) > 0) install.packages(missing_packages)
 
 library(sf)
@@ -103,11 +103,11 @@ stopifnot(
 N_WORKERS <- 8
 plan(multisession, workers = N_WORKERS)
 
-target_crs <- 3763  # EPSG:3763 — Portugal metric CRS
+target_crs <- 3763 # EPSG:3763 — Portugal metric CRS
 
 # TEST MODE: restrict the whole run to one municipality for fast sanity-checking.
-TEST_MODE      <- FALSE
-TEST_MUNICIPIO <- "Oeiras"  # must match a 'municipio' name in useful_data/municipalities.csv
+TEST_MODE <- FALSE
+TEST_MUNICIPIO <- "Oeiras" # must match a 'municipio' name in useful_data/municipalities.csv
 
 # Number of building rows processed per parallel chunk.
 CHUNK_SIZE <- 50000
@@ -139,7 +139,9 @@ if (!dir.create(CHECKPOINT_DIR, recursive = TRUE, showWarnings = TRUE)) {
 
 # Helper: try to read a checkpointed .Rds; return NULL if it doesn't exist yet.
 read_checkpoint <- function(path) {
-  if (!file.exists(path)) return(NULL)
+  if (!file.exists(path)) {
+    return(NULL)
+  }
   tryCatch(readRDS(path), error = function(e) NULL)
 }
 
@@ -160,17 +162,19 @@ census_bgri <- sf::st_read("data/base/daysimetric/BGRI21_170.gpkg", quiet = TRUE
 
 # Schema sanity check — fail loudly rather than silently use wrong columns.
 stopifnot(
-  "N_INDIVIDUOS"              %in% names(census_bgri),
-  "BGRI2021"                  %in% names(census_bgri),
-  "N_EDIFICIOS_CLASSICOS"     %in% names(census_bgri),
+  "N_INDIVIDUOS" %in% names(census_bgri),
+  "BGRI2021" %in% names(census_bgri),
+  "N_EDIFICIOS_CLASSICOS" %in% names(census_bgri),
   "N_EDIFICIOS_CONSTR_ANTES_1945" %in% names(census_bgri),
-  "N_NUCLEOS_FAMILIARES"      %in% names(census_bgri),
-  "N_INDIVIDUOS_0_14"         %in% names(census_bgri),
-  "N_INDIVIDUOS_65_OU_MAIS"   %in% names(census_bgri),
-  "N_INDIVIDUOS_M"            %in% names(census_bgri)
+  "N_NUCLEOS_FAMILIARES" %in% names(census_bgri),
+  "N_INDIVIDUOS_0_14" %in% names(census_bgri),
+  "N_INDIVIDUOS_65_OU_MAIS" %in% names(census_bgri),
+  "N_INDIVIDUOS_M" %in% names(census_bgri)
 )
-message(sprintf("[load] BGRI: %d blocks, total N_INDIVIDUOS = %s",
-  nrow(census_bgri), format(sum(census_bgri$N_INDIVIDUOS, na.rm = TRUE), big.mark = ",")))
+message(sprintf(
+  "[load] BGRI: %d blocks, total N_INDIVIDUOS = %s",
+  nrow(census_bgri), format(sum(census_bgri$N_INDIVIDUOS, na.rm = TRUE), big.mark = ",")
+))
 
 message("[load] Reading COS residential polygons...")
 cos_residential_aml <- sf::st_read("data/base/daysimetric/cos_residential_aml.gpkg", quiet = TRUE)
@@ -190,9 +194,9 @@ buildings <- buildings |>
 
 # Fix invalid geometries at load time.
 message("[prep] st_make_valid on BGRI, COS, buildings...")
-census_bgri         <- st_make_valid(census_bgri)
+census_bgri <- st_make_valid(census_bgri)
 cos_residential_aml <- st_make_valid(cos_residential_aml)
-buildings           <- st_make_valid(buildings)
+buildings <- st_make_valid(buildings)
 message("[prep] done")
 
 
@@ -226,7 +230,8 @@ if (!"municipio" %in% names(municipalities_sf) && file.exists("useful_data/munic
     municipalities_sf <- municipalities_sf |>
       mutate(mid = as.character(mid)) |>
       left_join(mun_lookup |> mutate(mid = as.character(mid)) |> select(mid, municipio = name),
-                by = "mid")
+        by = "mid"
+      )
   }
 }
 
@@ -237,18 +242,23 @@ if (TEST_MODE) {
   message(sprintf("[TEST MODE] Subsetting to municipality: %s", TEST_MUNICIPIO))
 
   if (!"municipio" %in% names(municipalities_sf) || !TEST_MUNICIPIO %in% municipalities_sf$municipio) {
-    avail <- if ("municipio" %in% names(municipalities_sf))
-      paste(sort(unique(municipalities_sf$municipio)), collapse = ", ") else "(no 'municipio' column)"
+    avail <- if ("municipio" %in% names(municipalities_sf)) {
+      paste(sort(unique(municipalities_sf$municipio)), collapse = ", ")
+    } else {
+      "(no 'municipio' column)"
+    }
     stop(sprintf("TEST_MUNICIPIO '%s' not found. Available: %s", TEST_MUNICIPIO, avail))
   }
 
-  test_boundary <- municipalities_sf |> filter(municipio == TEST_MUNICIPIO) |> st_make_valid()
+  test_boundary <- municipalities_sf |>
+    filter(municipio == TEST_MUNICIPIO) |>
+    st_make_valid()
   stopifnot(nrow(test_boundary) == 1)
 
   ref_crs <- st_crs(test_boundary)
-  grid                <- st_transform(grid,                ref_crs)[test_boundary, ]
-  buildings           <- st_transform(buildings,           ref_crs)[test_boundary, ]
-  census_bgri         <- st_transform(census_bgri,         ref_crs)[test_boundary, ]
+  grid <- st_transform(grid, ref_crs)[test_boundary, ]
+  buildings <- st_transform(buildings, ref_crs)[test_boundary, ]
+  census_bgri <- st_transform(census_bgri, ref_crs)[test_boundary, ]
   cos_residential_aml <- st_transform(cos_residential_aml, ref_crs)[test_boundary, ]
 
   message(sprintf(
@@ -261,9 +271,9 @@ if (TEST_MODE) {
 # 4. Reproject to EPSG:3763 for metric calculations ----------------------
 
 message("[prep] Reprojecting to EPSG:3763...")
-buildings           <- st_transform(buildings,           target_crs)
-census_bgri         <- st_transform(census_bgri,         target_crs)
-grid                <- st_transform(grid,                target_crs) |> st_make_valid()
+buildings <- st_transform(buildings, target_crs)
+census_bgri <- st_transform(census_bgri, target_crs)
+grid <- st_transform(grid, target_crs) |> st_make_valid()
 cos_residential_aml <- st_transform(cos_residential_aml, target_crs)
 
 
@@ -273,10 +283,10 @@ cos_residential_aml <- st_transform(cos_residential_aml, target_crs)
 cos_weighted <- cos_residential_aml |>
   rename(classification = COS23_n4_L) |>
   mutate(cos_weight = case_when(
-    classification == "Áreas edificadas residenciais contínuas predominantemente verticais"   ~ 3.0,
+    classification == "Áreas edificadas residenciais contínuas predominantemente verticais" ~ 3.0,
     classification == "Áreas edificadas residenciais contínuas predominantemente horizontais" ~ 1.0,
-    classification == "Áreas edificadas residenciais descontínuas"                            ~ 0.6,
-    TRUE                                                                                      ~ 0.3
+    classification == "Áreas edificadas residenciais descontínuas" ~ 0.6,
+    TRUE ~ 0.3
   )) |>
   select(classification, cos_weight)
 
@@ -291,17 +301,21 @@ if (!all(st_geometry_type(cos_residential_mask) %in% c("POLYGON", "MULTIPOLYGON"
   message("[prep] Non-polygon geometry from st_union() — extracting polygonal parts")
   cos_residential_mask <- st_collection_extract(cos_residential_mask, "POLYGON") |> st_make_valid()
 }
-message(sprintf("[prep] COS mask ready: %d vertices",
-  nrow(st_coordinates(cos_residential_mask))))
+message(sprintf(
+  "[prep] COS mask ready: %d vertices",
+  nrow(st_coordinates(cos_residential_mask))
+))
 
 # --- BGRI slim version for intersections ---
 # Split MULTIPOLYGON → POLYGON for predictable intersection behaviour.
 census_simple <- census_bgri |>
-  select(BGRI2021, N_INDIVIDUOS,
-         N_EDIFICIOS_CLASSICOS, N_EDIFICIOS_CONSTR_ANTES_1945,
-         N_NUCLEOS_FAMILIARES,
-         N_INDIVIDUOS_0_14, N_INDIVIDUOS_15_24, N_INDIVIDUOS_25_64,
-         N_INDIVIDUOS_65_OU_MAIS, N_INDIVIDUOS_M) |>
+  select(
+    BGRI2021, N_INDIVIDUOS,
+    N_EDIFICIOS_CLASSICOS, N_EDIFICIOS_CONSTR_ANTES_1945,
+    N_NUCLEOS_FAMILIARES,
+    N_INDIVIDUOS_0_14, N_INDIVIDUOS_15_24, N_INDIVIDUOS_25_64,
+    N_INDIVIDUOS_65_OU_MAIS, N_INDIVIDUOS_M
+  ) |>
   st_cast("POLYGON") |>
   st_make_valid()
 
@@ -309,7 +323,7 @@ census_simple <- census_bgri |>
 # 6. Filter grid to active cells (overlap BGRI) --------------------------
 
 message("[grid] Filtering to cells that overlap at least one BGRI block...")
-n_grid_raw    <- nrow(grid)
+n_grid_raw <- nrow(grid)
 n_grid_chunks <- if (TEST_MODE) 1L else ceiling(n_grid_raw / CHUNK_SIZE)
 
 grid_filter_batches <- if (TEST_MODE) {
@@ -329,12 +343,14 @@ run_grid_filter_chunk <- function(i, grid_batch) {
     return(cached)
   }
   t0 <- Sys.time()
-  hits   <- st_intersects(grid_batch, census_bgri, sparse = TRUE)
+  hits <- st_intersects(grid_batch, census_bgri, sparse = TRUE)
   result <- grid_batch[lengths(hits) > 0, ]
   write_checkpoint(result, ckpt)
-  message(sprintf("[grid filter %d/%d] %d -> %d active cells (%.1fs)",
+  message(sprintf(
+    "[grid filter %d/%d] %d -> %d active cells (%.1fs)",
     i, n_grid_chunks, nrow(grid_batch), nrow(result),
-    as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+    as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  ))
   result
 }
 grid_active <- bind_rows(future_map2(
@@ -356,7 +372,7 @@ message(sprintf("[grid] Active cells: %d / %d", nrow(grid_active), n_grid_raw))
 
 # -- 7a: residential clip --
 
-n_bldg_raw           <- nrow(buildings)
+n_bldg_raw <- nrow(buildings)
 n_residential_chunks <- if (TEST_MODE) 1L else ceiling(n_bldg_raw / CHUNK_SIZE)
 
 residential_batches <- if (TEST_MODE) {
@@ -367,23 +383,29 @@ residential_batches <- if (TEST_MODE) {
   })
 }
 
-message(sprintf("[bldg] Clipping %d buildings to COS mask (%d chunks, %d workers)...",
-  n_bldg_raw, n_residential_chunks, N_WORKERS))
+message(sprintf(
+  "[bldg] Clipping %d buildings to COS mask (%d chunks, %d workers)...",
+  n_bldg_raw, n_residential_chunks, N_WORKERS
+))
 run_residential_chunk <- function(i, buildings_batch) {
   library(sf)
   ckpt <- sprintf("%s/residential%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
   cached <- read_checkpoint(ckpt)
   if (!is.null(cached)) {
-    message(sprintf("[bldg clip %d/%d] checkpoint found (%d buildings)",
-      i, n_residential_chunks, nrow(cached)))
+    message(sprintf(
+      "[bldg clip %d/%d] checkpoint found (%d buildings)",
+      i, n_residential_chunks, nrow(cached)
+    ))
     return(cached)
   }
   t0 <- Sys.time()
   result <- st_intersection(buildings_batch, cos_residential_mask)
   write_checkpoint(result, ckpt)
-  message(sprintf("[bldg clip %d/%d] %d -> %d residential fragments (%.1fs)",
+  message(sprintf(
+    "[bldg clip %d/%d] %d -> %d residential fragments (%.1fs)",
     i, n_residential_chunks, nrow(buildings_batch), nrow(result),
-    as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+    as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  ))
   result
 }
 buildings_residential <- bind_rows(future_map2(
@@ -404,7 +426,7 @@ empty_vol_frags <- tibble(
 )
 
 n_bldg_res <- nrow(buildings_residential)
-n_chunks   <- if (TEST_MODE) 1L else ceiling(n_bldg_res / CHUNK_SIZE)
+n_chunks <- if (TEST_MODE) 1L else ceiling(n_bldg_res / CHUNK_SIZE)
 
 fragment_batches <- if (TEST_MODE) {
   list(buildings_residential)
@@ -442,9 +464,11 @@ run_fragment_chunk <- function(i, buildings_batch) {
     }
   }
   write_checkpoint(result, ckpt)
-  message(sprintf("[frags %d/%d] %d buildings -> %d fragments (%.1fs)",
+  message(sprintf(
+    "[frags %d/%d] %d buildings -> %d fragments (%.1fs)",
     i, n_chunks, nrow(buildings_batch), nrow(result),
-    as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+    as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  ))
   result
 }
 vol_frags_raw <- bind_rows(future_map2(
@@ -452,8 +476,10 @@ vol_frags_raw <- bind_rows(future_map2(
   run_fragment_chunk,
   .options = furrr_options(seed = NULL)
 ))
-message(sprintf("[frags] Done in %.1f min",
-  as.numeric(difftime(Sys.time(), t_wall, units = "mins"))))
+message(sprintf(
+  "[frags] Done in %.1f min",
+  as.numeric(difftime(Sys.time(), t_wall, units = "mins"))
+))
 
 # Aggregate to (id × BGRI2021) — unnormalised; normalisation happens at step 10.
 vol_weights <- vol_frags_raw |>
@@ -484,8 +510,10 @@ if (is.null(cos_bgri_frags)) {
     summarise(cos_weight_sum = sum(cos_area_score, na.rm = TRUE), .groups = "drop") |>
     filter(cos_weight_sum > 0)
   write_checkpoint(cos_bgri_frags, ckpt_cos)
-  message(sprintf("[cos] COS weight pairs: %d — %.1f min",
-    nrow(cos_bgri_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))))
+  message(sprintf(
+    "[cos] COS weight pairs: %d — %.1f min",
+    nrow(cos_bgri_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
+  ))
   rm(grid_cos, cos_bgri_frags_sf)
 } else {
   message(sprintf("[cos] Checkpoint found: %d COS weight pairs", nrow(cos_bgri_frags)))
@@ -509,8 +537,10 @@ if (is.null(bgri_area_frags)) {
     select(id, BGRI2021, bare_area) |>
     filter(bare_area > 0)
   write_checkpoint(bgri_area_frags, ckpt_bgri)
-  message(sprintf("[fallback] Bare-area pairs: %d — %.1f min",
-    nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))))
+  message(sprintf(
+    "[fallback] Bare-area pairs: %d — %.1f min",
+    nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
+  ))
   rm(bgri_area_frags_sf)
 } else {
   message(sprintf("[fallback] Checkpoint found: %d bare-area pairs", nrow(bgri_area_frags)))
@@ -524,18 +554,18 @@ gc()
 message("[combine] Applying hierarchical fallback...")
 
 all_pairs <- bgri_area_frags |>
-  left_join(vol_weights,    by = c("id", "BGRI2021")) |>
+  left_join(vol_weights, by = c("id", "BGRI2021")) |>
   left_join(cos_bgri_frags, by = c("id", "BGRI2021")) |>
   mutate(
     weight_source = case_when(
-      !is.na(vol_weight)     & vol_weight    > 0 ~ "building_volume",
+      !is.na(vol_weight) & vol_weight > 0 ~ "building_volume",
       !is.na(cos_weight_sum) & cos_weight_sum > 0 ~ "cos_area",
-      TRUE                                        ~ "bare_area"
+      TRUE ~ "bare_area"
     ),
     weight = case_when(
       weight_source == "building_volume" ~ vol_weight,
-      weight_source == "cos_area"        ~ cos_weight_sum,
-      TRUE                               ~ bare_area
+      weight_source == "cos_area" ~ cos_weight_sum,
+      TRUE ~ bare_area
     )
   ) |>
   filter(weight > 0)
@@ -558,9 +588,11 @@ message("[pop] Distributing BGRI population across H3 cells...")
 
 demo_cols <- census_bgri |>
   st_drop_geometry() |>
-  select(BGRI2021, N_INDIVIDUOS, N_EDIFICIOS_CLASSICOS, N_EDIFICIOS_CONSTR_ANTES_1945,
-         N_NUCLEOS_FAMILIARES, N_INDIVIDUOS_0_14, N_INDIVIDUOS_15_24,
-         N_INDIVIDUOS_25_64, N_INDIVIDUOS_65_OU_MAIS, N_INDIVIDUOS_M) |>
+  select(
+    BGRI2021, N_INDIVIDUOS, N_EDIFICIOS_CLASSICOS, N_EDIFICIOS_CONSTR_ANTES_1945,
+    N_NUCLEOS_FAMILIARES, N_INDIVIDUOS_0_14, N_INDIVIDUOS_15_24,
+    N_INDIVIDUOS_25_64, N_INDIVIDUOS_65_OU_MAIS, N_INDIVIDUOS_M
+  ) |>
   distinct(BGRI2021, .keep_all = TRUE)
 
 fragments_with_pop <- all_pairs |>
@@ -571,28 +603,28 @@ fragments_with_pop <- all_pairs |>
   mutate(pop_fraction = weight / total_bgri_weight) |>
   left_join(demo_cols, by = "BGRI2021") |>
   mutate(
-    fragment_pop             = N_INDIVIDUOS                  * pop_fraction,
-    fragment_buildings       = N_EDIFICIOS_CLASSICOS         * pop_fraction,
+    fragment_pop             = N_INDIVIDUOS * pop_fraction,
+    fragment_buildings       = N_EDIFICIOS_CLASSICOS * pop_fraction,
     fragment_buildings_pre45 = N_EDIFICIOS_CONSTR_ANTES_1945 * pop_fraction,
-    fragment_households      = N_NUCLEOS_FAMILIARES          * pop_fraction,
-    fragment_youth           = N_INDIVIDUOS_0_14             * pop_fraction,
+    fragment_households      = N_NUCLEOS_FAMILIARES * pop_fraction,
+    fragment_youth           = N_INDIVIDUOS_0_14 * pop_fraction,
     fragment_adults          = (N_INDIVIDUOS_15_24 + N_INDIVIDUOS_25_64) * pop_fraction,
-    fragment_elderly         = N_INDIVIDUOS_65_OU_MAIS       * pop_fraction,
-    fragment_women           = N_INDIVIDUOS_M                * pop_fraction
+    fragment_elderly         = N_INDIVIDUOS_65_OU_MAIS * pop_fraction,
+    fragment_women           = N_INDIVIDUOS_M * pop_fraction
   )
 
 h3_pop_table <- fragments_with_pop |>
   group_by(id) |>
   summarise(
-    population        = sum(fragment_pop,             na.rm = TRUE),
-    buildings         = sum(fragment_buildings,        na.rm = TRUE),
-    buildings_pre1945 = sum(fragment_buildings_pre45,  na.rm = TRUE),
-    households        = sum(fragment_households,       na.rm = TRUE),
-    youth             = sum(fragment_youth,            na.rm = TRUE),
-    adults            = sum(fragment_adults,           na.rm = TRUE),
-    elderly           = sum(fragment_elderly,          na.rm = TRUE),
-    women             = sum(fragment_women,            na.rm = TRUE),
-    weight_source     = first(weight_source),
+    population = sum(fragment_pop, na.rm = TRUE),
+    buildings = sum(fragment_buildings, na.rm = TRUE),
+    buildings_pre1945 = sum(fragment_buildings_pre45, na.rm = TRUE),
+    households = sum(fragment_households, na.rm = TRUE),
+    youth = sum(fragment_youth, na.rm = TRUE),
+    adults = sum(fragment_adults, na.rm = TRUE),
+    elderly = sum(fragment_elderly, na.rm = TRUE),
+    women = sum(fragment_women, na.rm = TRUE),
+    weight_source = first(weight_source),
     .groups = "drop"
   )
 
@@ -602,7 +634,7 @@ gc()
 
 # 12. Join population table to H3 grid geometry --------------------------
 
-plan(sequential)  # release parallel workers
+plan(sequential) # release parallel workers
 message("[output] Joining population table to H3 grid geometry...")
 
 grid$area_km2 <- as.numeric(st_area(grid)) / 1e6
@@ -610,23 +642,23 @@ grid$area_km2 <- as.numeric(st_area(grid)) / 1e6
 grid_final <- grid |>
   left_join(h3_pop_table, by = "id") |>
   mutate(
-    across(c(population, buildings, buildings_pre1945, households,
-             youth, adults, elderly, women), ~ replace_na(.x, 0)),
+    across(c(
+      population, buildings, buildings_pre1945, households,
+      youth, adults, elderly, women
+    ), ~ replace_na(.x, 0)),
     across(c(population, buildings, buildings_pre1945, youth, adults, elderly, women), ceiling),
     households = if_else(households > 0 & households < 1, 1, households),
-    population_density           = population / area_km2,
-    youth_ratio                  = if_else(population > 0, round(youth   / population * 100, 2), 0),
-    elderly_ratio                = if_else(population > 0, round(elderly / population * 100, 2), 0),
-    youth_dependency             = if_else(adults > 0,     round(youth   / adults     * 100, 2), 0),
-    elderly_dependency           = if_else(adults > 0,     round(elderly / adults     * 100, 2), 0),
-    women_percentage             = if_else(population > 0, round(women   / population * 100, 2), 0),
-    pp_hh_avg                    = if_else(households >= 3, round(population / households, 2), NA_real_),
-    buildings_pre1945_percentage = if_else(buildings > 0,
-                                     round(buildings_pre1945 / buildings * 100, 2), 0),
-    buildings_pre1945_pct        = buildings_pre1945_percentage
+    population_density = population / area_km2,
+    youth_ratio = if_else(population > 0, round(youth / population * 100, 2), 0),
+    elderly_ratio = if_else(population > 0, round(elderly / population * 100, 2), 0),
+    youth_dependency = if_else(adults > 0, round(youth / adults * 100, 2), 0),
+    elderly_dependency = if_else(adults > 0, round(elderly / adults * 100, 2), 0),
+    women_percentage = if_else(population > 0, round(women / population * 100, 2), 0),
+    pp_hh_avg = if_else(households >= 3, round(population / households, 2), NA_real_),
+    buildings_pre1945_percentage = if_else(buildings > 0, round(buildings_pre1945 / buildings * 100, 2), 0)
   ) |>
   mutate(
-    youth_dependency   = if_else(is.nan(youth_dependency)   | is.infinite(youth_dependency),   0,   youth_dependency),
+    youth_dependency   = if_else(is.nan(youth_dependency) | is.infinite(youth_dependency), 0, youth_dependency),
     elderly_dependency = if_else(is.nan(elderly_dependency) | is.infinite(elderly_dependency), 100, elderly_dependency),
     pp_hh_avg          = if_else(pp_hh_avg > 50, NA_real_, pp_hh_avg)
   ) |>
@@ -636,20 +668,24 @@ grid_final <- grid |>
 # 13. Validation ---------------------------------------------------------
 
 bgri_total <- sum(census_bgri$N_INDIVIDUOS, na.rm = TRUE)
-grid_total <- sum(grid_final$population,    na.rm = TRUE)
-diff_abs   <- bgri_total - grid_total
-diff_pct   <- 100 * diff_abs / bgri_total
+grid_total <- sum(grid_final$population, na.rm = TRUE)
+diff_abs <- bgri_total - grid_total
+diff_pct <- 100 * diff_abs / bgri_total
 
 message("--- Population totals check ---")
-message(sprintf("BGRI census total:     %s", format(bgri_total,        big.mark = ",")))
+message(sprintf("BGRI census total:     %s", format(bgri_total, big.mark = ",")))
 message(sprintf("Grid population total: %s", format(round(grid_total), big.mark = ",")))
-message(sprintf("Difference (BGRI-grid): %s  (%.2f%%)",
-  format(round(diff_abs), big.mark = ","), diff_pct))
-
-if (diff_pct > 2) warning(sprintf(
-  "Population loss (%.2f%%) exceeds 2%% — check weight_source breakdown and coverage.",
-  diff_pct
+message(sprintf(
+  "Difference (BGRI-grid): %s  (%.2f%%)",
+  format(round(diff_abs), big.mark = ","), diff_pct
 ))
+
+if (diff_pct > 2) {
+  warning(sprintf(
+    "Population loss (%.2f%%) exceeds 2%% — check weight_source breakdown and coverage.",
+    diff_pct
+  ))
+}
 
 if (interactive()) {
   mapview(grid_final |> filter(population > 0), zcol = "population")
@@ -663,7 +699,7 @@ out_dir <- "data/base/daysimetric"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 out_gpkg <- file.path(out_dir, sprintf("grid_dasymetric_combined%s.gpkg", run_suffix))
-out_csv  <- file.path(out_dir, sprintf("grid_dasymetric_combined%s.csv",  run_suffix))
+out_csv <- file.path(out_dir, sprintf("grid_dasymetric_combined%s.csv", run_suffix))
 
 sf::st_write(grid_final, out_gpkg, delete_dsn = TRUE)
 write.csv(sf::st_drop_geometry(grid_final), out_csv, row.names = FALSE)
