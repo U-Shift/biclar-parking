@@ -6,6 +6,8 @@ This repository aims to document the data treatment and processing steps for the
 
 Data should not be synced with GitHub. Instead, we use `/data/biclar-parking` folder at `ushift@alfa` server, a shared folder accessible to all users at the server.
 
+> If you run into any permission issues while manipulating files in the data folder, ask an administrator to run the following command: `$ sudo chmod -R 777 /data/biclar-parking`
+
 ### At RStudio server
 
 ```bash
