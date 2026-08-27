@@ -470,19 +470,27 @@ gc()
 # Not chunked — lighter than the building intersection.
 
 message("[cos] Intersecting grid × COS weighted × BGRI...")
-t0 <- Sys.time()
-grid_cos <- st_intersection(grid_active, cos_weighted)
-cos_bgri_frags <- st_intersection(grid_cos, census_simple) |>
-  mutate(frag_area = as.numeric(st_area(.))) |>
-  st_drop_geometry() |>
-  mutate(cos_area_score = frag_area * cos_weight) |>
-  group_by(id, BGRI2021) |>
-  summarise(cos_weight_sum = sum(cos_area_score, na.rm = TRUE), .groups = "drop") |>
-  filter(cos_weight_sum > 0)
-
-message(sprintf("[cos] COS weight pairs: %d — %.1f min",
-  nrow(cos_bgri_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))))
-rm(grid_cos, cos_weighted)
+ckpt_cos <- sprintf("%s/cos_bgri_frags%s.Rds", CHECKPOINT_DIR, run_suffix)
+cos_bgri_frags <- read_checkpoint(ckpt_cos)
+if (is.null(cos_bgri_frags)) {
+  t0 <- Sys.time()
+  grid_cos <- st_intersection(grid_active, cos_weighted)
+  cos_bgri_frags_sf <- st_intersection(grid_cos, census_simple)
+  cos_bgri_frags_sf$frag_area <- as.numeric(st_area(cos_bgri_frags_sf))
+  cos_bgri_frags <- cos_bgri_frags_sf |>
+    st_drop_geometry() |>
+    mutate(cos_area_score = frag_area * cos_weight) |>
+    group_by(id, BGRI2021) |>
+    summarise(cos_weight_sum = sum(cos_area_score, na.rm = TRUE), .groups = "drop") |>
+    filter(cos_weight_sum > 0)
+  write_checkpoint(cos_bgri_frags, ckpt_cos)
+  message(sprintf("[cos] COS weight pairs: %d — %.1f min",
+    nrow(cos_bgri_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))))
+  rm(grid_cos, cos_bgri_frags_sf)
+} else {
+  message(sprintf("[cos] Checkpoint found: %d COS weight pairs", nrow(cos_bgri_frags)))
+}
+rm(cos_weighted)
 gc()
 
 
@@ -490,15 +498,23 @@ gc()
 # Ensures no BGRI block is ever silently dropped (last resort weight).
 
 message("[fallback] Computing bare BGRI-area fallback fragments...")
-t0 <- Sys.time()
-bgri_area_frags <- st_intersection(grid_active, census_simple) |>
-  mutate(bare_area = as.numeric(st_area(.))) |>
-  st_drop_geometry() |>
-  select(id, BGRI2021, bare_area) |>
-  filter(bare_area > 0)
-
-message(sprintf("[fallback] Bare-area pairs: %d — %.1f min",
-  nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))))
+ckpt_bgri <- sprintf("%s/bgri_area_frags%s.Rds", CHECKPOINT_DIR, run_suffix)
+bgri_area_frags <- read_checkpoint(ckpt_bgri)
+if (is.null(bgri_area_frags)) {
+  t0 <- Sys.time()
+  bgri_area_frags_sf <- st_intersection(grid_active, census_simple)
+  bgri_area_frags_sf$bare_area <- as.numeric(st_area(bgri_area_frags_sf))
+  bgri_area_frags <- bgri_area_frags_sf |>
+    st_drop_geometry() |>
+    select(id, BGRI2021, bare_area) |>
+    filter(bare_area > 0)
+  write_checkpoint(bgri_area_frags, ckpt_bgri)
+  message(sprintf("[fallback] Bare-area pairs: %d — %.1f min",
+    nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))))
+  rm(bgri_area_frags_sf)
+} else {
+  message(sprintf("[fallback] Checkpoint found: %d bare-area pairs", nrow(bgri_area_frags)))
+}
 rm(grid_active)
 gc()
 
@@ -540,11 +556,12 @@ gc()
 
 message("[pop] Distributing BGRI population across H3 cells...")
 
-demo_cols <- census_simple |>
+demo_cols <- census_bgri |>
   st_drop_geometry() |>
   select(BGRI2021, N_INDIVIDUOS, N_EDIFICIOS_CLASSICOS, N_EDIFICIOS_CONSTR_ANTES_1945,
          N_NUCLEOS_FAMILIARES, N_INDIVIDUOS_0_14, N_INDIVIDUOS_15_24,
-         N_INDIVIDUOS_25_64, N_INDIVIDUOS_65_OU_MAIS, N_INDIVIDUOS_M)
+         N_INDIVIDUOS_25_64, N_INDIVIDUOS_65_OU_MAIS, N_INDIVIDUOS_M) |>
+  distinct(BGRI2021, .keep_all = TRUE)
 
 fragments_with_pop <- all_pairs |>
   group_by(BGRI2021) |>
@@ -588,6 +605,8 @@ gc()
 plan(sequential)  # release parallel workers
 message("[output] Joining population table to H3 grid geometry...")
 
+grid$area_km2 <- as.numeric(st_area(grid)) / 1e6
+
 grid_final <- grid |>
   left_join(h3_pop_table, by = "id") |>
   mutate(
@@ -595,16 +614,16 @@ grid_final <- grid |>
              youth, adults, elderly, women), ~ replace_na(.x, 0)),
     across(c(population, buildings, buildings_pre1945, youth, adults, elderly, women), ceiling),
     households = if_else(households > 0 & households < 1, 1, households),
-    area_km2              = as.numeric(st_area(.)) / 1e6,
-    population_density    = population / area_km2,
-    youth_ratio           = if_else(population > 0, round(youth   / population * 100, 2), 0),
-    elderly_ratio         = if_else(population > 0, round(elderly / population * 100, 2), 0),
-    youth_dependency      = if_else(adults > 0,     round(youth   / adults     * 100, 2), 0),
-    elderly_dependency    = if_else(adults > 0,     round(elderly / adults     * 100, 2), 0),
-    women_percentage      = if_else(population > 0, round(women   / population * 100, 2), 0),
-    pp_hh_avg             = if_else(households >= 3, round(population / households, 2), NA_real_),
-    buildings_pre1945_pct = if_else(buildings > 0,
-                              round(buildings_pre1945 / buildings * 100, 2), 0)
+    population_density           = population / area_km2,
+    youth_ratio                  = if_else(population > 0, round(youth   / population * 100, 2), 0),
+    elderly_ratio                = if_else(population > 0, round(elderly / population * 100, 2), 0),
+    youth_dependency             = if_else(adults > 0,     round(youth   / adults     * 100, 2), 0),
+    elderly_dependency           = if_else(adults > 0,     round(elderly / adults     * 100, 2), 0),
+    women_percentage             = if_else(population > 0, round(women   / population * 100, 2), 0),
+    pp_hh_avg                    = if_else(households >= 3, round(population / households, 2), NA_real_),
+    buildings_pre1945_percentage = if_else(buildings > 0,
+                                     round(buildings_pre1945 / buildings * 100, 2), 0),
+    buildings_pre1945_pct        = buildings_pre1945_percentage
   ) |>
   mutate(
     youth_dependency   = if_else(is.nan(youth_dependency)   | is.infinite(youth_dependency),   0,   youth_dependency),
