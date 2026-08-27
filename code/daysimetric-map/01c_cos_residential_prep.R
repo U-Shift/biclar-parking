@@ -1,3 +1,18 @@
+# =============================================================================
+# SERVER-ONLY SCRIPT — kept as documentation
+# =============================================================================
+# This script uses impt_read()/impt_write() which require the data to be
+# mounted via `mount --bind` on the server, or adapted for local use.
+#
+# Its outputs already exist on the server at:
+#   /data/biclar-parking/base/daysimetric/cos_residential_aml.gpkg
+#   /data/biclar-parking/base/daysimetric/clipping_boundary.geojson
+#
+# You do NOT need to re-run this script unless those files are lost or the
+# COS source data changes. 03_dasymetric_combined.R reads from those paths
+# directly via the sshfs-mounted ./data/ folder.
+# =============================================================================
+
 # COS residential layer prep - GRID ONLY variant support script
 # Extracted/adapted from the commented-out block at 02_census_grid_with_cos.R:6-37.
 # Produces the two files that 02_census_grid_with_cos.R expects to already exist:
@@ -55,17 +70,18 @@ library(mapview)
 # if it's multiple freguesia/municipio rows (matching what this project's own CAOP_GLPS
 # variable used to be, before dissolving) this collapses it into the one boundary polygon
 # needed as a clip mask below.
-caop_glps <- impt_read("/geo/CAOP_GLPS.gpkg")
+caop_glps <- sf::st_read("data/geo/CAOP_GLPS.gpkg", quiet = TRUE)
 message(sprintf("CAOP_GLPS.gpkg: %d row(s) before dissolve", nrow(caop_glps)))
 clip_boundary <- caop_glps |> st_union() |> st_make_valid()
-impt_write(clip_boundary, "/base/daysimetric/clipping_boundary.geojson")
+dir.create("data/base/daysimetric", recursive = TRUE, showWarnings = FALSE)
+sf::st_write(clip_boundary, "data/base/daysimetric/clipping_boundary.geojson", delete_dsn = TRUE)
 
 # COS raw ---------------------------------------------------------------
 # Server-provided, pre-clipped/pre-processed COS layer - NOT the raw national DGT download
 # this script originally read. Its actual classification schema is unverified (see the
 # schema check immediately below) - "GLPS_LAND" in the filename suggests it may already be
 # simplified/reclassified rather than COS's full detailed n4 taxonomy.
-cos_raw <- impt_read("/geo/COS_GLPS_LAND.gpkg")
+cos_raw <- sf::st_read("data/geo/COS_GLPS_LAND.gpkg", quiet = TRUE)
 
 # GEOMETRY TYPE CHECK - found the actual root cause of the residential-clip loop being far
 # slower on the server than locally: cos_residential_mask (built from this file, in
@@ -195,4 +211,4 @@ mapview(cos_residential_aml, zcol = "COS23_n4_L")
 
 # export ---------------------------------------------------------------
 
-impt_write(cos_residential_aml, "/base/daysimetric/cos_residential_aml.gpkg")
+sf::st_write(cos_residential_aml, "data/base/daysimetric/cos_residential_aml.gpkg", delete_dsn = TRUE)

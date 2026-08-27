@@ -1,3 +1,18 @@
+# =============================================================================
+# SERVER-ONLY SCRIPT — kept as documentation
+# =============================================================================
+# This script uses impt_read()/impt_write() which require the data to be
+# mounted via `mount --bind` on the server, or adapted for local use.
+#
+# Its output already exists on the server at:
+#   /data/biclar-parking/base/daysimetric/lisbon_metro_buildings_footprints.geojson
+#
+# You do NOT need to re-run this script unless that file is lost, the Global
+# Building Atlas source changes, or the AML boundary is updated.
+# 03_dasymetric_combined.R reads from that path directly via the sshfs-mounted
+# ./data/ folder.
+# =============================================================================
+
 # Buildings volume prep - AML-wide polygon footprints
 # Adapted from code/test-code/buildings_height.R (removed from this project during cleanup -
 # see git history if you need to compare against the original point-centroid version).
@@ -50,7 +65,7 @@ library(dplyr)
 # matches anything and drops out of the final result - it's filtered out downstream, not
 # something this script needs to handle itself.
 
-aml_boundary <- impt_read("/geo/municipalities_union.gpkg")
+aml_boundary <- sf::st_read("data/geo/municipalities_union.gpkg", quiet = TRUE)
 aml_bbox <- st_bbox(aml_boundary)
 aml_bbox # sanity check before querying - compare against the coverage check we did earlier
 
@@ -156,6 +171,7 @@ summary(aml_buildings_footprints$height)
 summary(aml_buildings_footprints$volume_m3)
 
 # export ---------------------------------------------------------------
-# SERVER VARIANT: written under /base/daysimetric/ (not /pois/) - see header note above.
-
-impt_write(aml_buildings_footprints, "/base/daysimetric/lisbon_metro_buildings_footprints.geojson")
+dir.create("data/base/daysimetric", recursive = TRUE, showWarnings = FALSE)
+sf::st_write(aml_buildings_footprints,
+             "data/base/daysimetric/lisbon_metro_buildings_footprints.geojson",
+             delete_dsn = TRUE)

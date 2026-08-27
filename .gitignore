@@ -4,3 +4,4 @@ data/*
 data
 .Rhistory
 *.log
+checkpoints/
