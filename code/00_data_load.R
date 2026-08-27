@@ -4,6 +4,7 @@
 library(dplyr)
 library(sf)
 library(mapview)
+mapviewOptions(basemaps = c("Esri.WorldGrayCanvas", "CartoDB.Positron", "OpenStreetMap")) # Avoid Carto API Key
 
 # Geo ---------------------------------------------------------------------
 grid <- sf::st_read("data/geo/grid.gpkg")
