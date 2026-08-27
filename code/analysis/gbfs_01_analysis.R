@@ -1,3 +1,5 @@
+library(dplyr)
+
 # Analyse gbfs data at grid level
 # Run with: $ Rscript code/analysis/gbfs_01_analysis.R
 source("code/00_data_load.R")
@@ -24,7 +26,7 @@ GBFS_LIST[1,] = c("emel_gira", FALSE)
 GBFS_LIST[2,] = c("bird_cascais", TRUE)
 GBFS_LIST[3,] = c("bird_lisboa", TRUE)
 
-grid_all = data.frame() 
+grid_all = data.frame()
 
 # Analyse for each operator
 for (i in 1:nrow(GBFS_LIST)) { # i = 1
@@ -32,7 +34,7 @@ for (i in 1:nrow(GBFS_LIST)) { # i = 1
   dockless = as.logical(GBFS_LIST[i, "dockless"])
   print(paste0("Processing region: ", region, " (dockless: ", dockless, ")"))
   folder = paste0("data/analysis/gbfs/", region, "/")
-  # Load stations/grid association 
+  # Load stations/grid association
   stations_in_grid = read.csv(paste0(folder, "stations_in_grid.csv"))
 
   # Aggregate stats at grid level
@@ -41,9 +43,9 @@ for (i in 1:nrow(GBFS_LIST)) { # i = 1
     summarise(n_stations = n())
   grid_analysis = grid |>
     left_join(gtfs_stations, by = "gid")
-  # mapview(grid_analysis, zcol="n_stations", legend=TRUE, layer.name="Number of stations")
+  # mapview(grid_analysis |> filter(n_stations>0), zcol="n_stations", legend=TRUE, layer.name="Number of stations")
 
-  # For each period, merge stats 
+  # For each period, merge stats
   for (p in 1:nrow(PERIODS)) { # p = 1
     period = PERIODS[p, ]
     message(paste0("Processing period: ", period$day_type, " (", period$hour_start, " to ", period$hour_end, ")"))
@@ -55,15 +57,17 @@ for (i in 1:nrow(GBFS_LIST)) { # i = 1
         n_updates = sum(n_updates),
         capacity = sum(capacity, na.rm = TRUE),
         bikes_rented = sum(bikes_rented, na.rm = TRUE),
-        bikes_returned = sum(bikes_returned, na.rm = TRUE)
-        # TODO! Improve with additional metrics
+        bikes_returned = sum(bikes_returned, na.rm = TRUE),
+        bikes_n_max = sum(free_bikes_max, na.rm = TRUE),
+        docks_n_max = sum(free_docks_max, na.rm = TRUE),
+        occupancy_ratio_max = round(bikes_n_max / capacity * 100, 2)
       ) |>
       left_join(grid_analysis |> st_drop_geometry() |> select(gid, n_stations), by = "gid")
     # View(period_stats)
-    
+
     write.csv(period_stats, paste0(folder, "grid_metrics_", period$day_type, "_", period$hour_start, "-", period$hour_end, ".csv"), row.names = FALSE)
 
-    grid_all = grid_all |> 
+    grid_all = grid_all |>
       bind_rows(
         period_stats |>
           mutate(
@@ -91,10 +95,12 @@ for (p in 1:nrow(PERIODS)) { # p = 1
       capacity = sum(capacity, na.rm = TRUE),
       bikes_rented = sum(bikes_rented, na.rm = TRUE),
       bikes_returned = sum(bikes_returned, na.rm = TRUE),
-      # TODO! Improve with additional metrics
+      bikes_n_max = sum(bikes_n_max, na.rm = TRUE),
+      docks_n_max = sum(docks_n_max, na.rm = TRUE),
+      occupancy_ratio_max = round(bikes_n_max / capacity * 100, 2),
       any_dockless = any(dockless),
       any_dock = !any(dockless)
     )
-  
+
   write.csv(grid_all_period, paste0("data/analysis/gbfs/grid_metrics_", period$day_type, "_", period$hour_start, "-", period$hour_end, ".csv"), row.names = FALSE)
 }
