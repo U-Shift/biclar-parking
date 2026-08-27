@@ -2,6 +2,13 @@ library(sf)
 library(dplyr)
 library(mapview)
 
+source("code/00_data_load.R")
+source("code/00_helpers.R")
+
+# Parameters --------------------------------------------------
+INTERFACE_BUFFER_M <- 150
+OUTPUT_FOLDER <- "data/analysis/ticketing"
+
 # Load TML interfaces --------------------------------------------------
 interfaces <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/interfaces_interfaces_hierarquia_aml/items?f=json&limit=1000&offset=0") |>
     mutate(
@@ -10,12 +17,13 @@ interfaces <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/in
         interface_list = strsplit(Interface, "\\+"),
         # For each element, trim leading/trailing whitespace
         interface_list = lapply(interface_list, function(x) trimws(x))
-    )
+    ) |>
+  mutate(cod_interf = row_number())
 
 View(interfaces |> st_drop_geometry())
 nrow(interfaces) # 267
 
-mapview(interfaces, zcol = "tipo")
+mapview(interfaces |> select(cod_interf, designacao, hierarq, tipo, municipio), zcol = "tipo")
 
 # > Extend data with flags on modes covered
 table(unlist(interfaces$interface_list))
@@ -49,4 +57,162 @@ View(interfaces |> st_drop_geometry())
 # mapview(interfaces |> select(-interface_list), zcol="boat")
 
 # Load ticketing data --------------------------------------------------
-# TODO!
+base_folder <- "data/raw/TML_validacoes/06-05-2026 Todos Operadores"
+ticketing_sources <- list.files(base_folder, pattern = "\\.zip$", full.names = TRUE)
+
+validation_types <- c("Entry Transaction")
+
+ticketing_raw <- data.frame()
+operators <- data.frame(
+    id = numeric(),
+    name = character()
+)
+
+# For each zip, load CSVs inside to ticketing_raw
+for (z in ticketing_sources) {
+    message(sprintf("\nScrapping %s...", z))
+    # List CSV files inside the zip
+    files_in_zip <- unzip(z, list = TRUE)$Name
+    csv_files <- files_in_zip[grepl("\\.csv$", files_in_zip, ignore.case = TRUE)]
+
+    ticketing_zip <- data.frame()
+    for (csv_file in csv_files) {
+        # Read the CSV file directly from the zip using a connection
+        con <- unz(z, csv_file)
+        lines <- readLines(con, encoding = "latin1")
+        utf8_lines <- iconv(lines, from = "latin1", to = "UTF-8")
+        temp_df <- read.csv(text = utf8_lines, sep = ";", dec = ",", stringsAsFactors = FALSE)
+        # Bind to the main data frame
+        ticketing_zip <- bind_rows(ticketing_zip, temp_df)
+    }
+    # Log relevant parameters
+    message("Unique entry-exits: ", paste(unique(ticketing_zip$ENTRY_EXIT), collapse = ", "))
+    message("Names: ", paste(names(ticketing_zip), collapse = ", "))
+
+    ticketing_raw <- bind_rows(ticketing_raw, ticketing_zip |>
+        filter(ENTRY_EXIT %in% validation_types) |>
+        select(X_COORDINATE, Y_COORDINATE, Codigo_Entidade, DataHora) |>
+        rename(lat = X_COORDINATE, lon = Y_COORDINATE, operator_id = Codigo_Entidade) |>
+        mutate(
+            # Convert DataHora (06/05/2026 00:07) to timestamp
+            timestamp = as.POSIXct(DataHora, format = "%d/%m/%Y %H:%M")
+        ) |>
+        select(-DataHora))
+
+    operators <- bind_rows(operators, data.frame(
+        id = unique(ticketing_zip$Codigo_Entidade),
+        name = unique(ticketing_zip$Nome_Entidade)
+    ))
+}
+
+ticketing_sf <- ticketing_raw |>
+    filter(!is.na(lat), !is.na(lon)) |>
+    st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
+    mutate(id = row_number())
+
+mapview(
+    ticketing_sf |> left_join(operators, by = c("operator_id" = "id")),
+    zcol = "name",
+    layer.name = "Entry validations"
+)
+
+
+# Overlap ticketing and interfaces --------------------------------------------------
+
+interfaces_buffer <- interfaces |>
+    select(-interface_list) |>
+    st_transform(3763)
+
+# Generate Voronoi cells to split overlaps fairly between nearest points
+points_union <- st_union(interfaces_buffer)
+voronoi_geom <- st_voronoi(points_union)
+voronoi_sf <- st_collection_extract(voronoi_geom, "POLYGON") |> st_as_sf()
+
+# Match each interface point to its corresponding Voronoi cell
+cell_indices <- st_within(interfaces_buffer, voronoi_sf) |> as.integer()
+voronoi_polys <- st_geometry(voronoi_sf)[cell_indices]
+
+# Buffer the interfaces by INTERFACE_BUFFER_M meters
+buffers <- st_buffer(interfaces_buffer, INTERFACE_BUFFER_M)
+
+# Intersect each buffer with its corresponding Voronoi cell (element-wise)
+clean_geoms <- Map(st_intersection, st_geometry(buffers), voronoi_polys)
+
+# Assign the clipped geometries back and transform to 4326
+st_geometry(interfaces_buffer) <- st_sfc(clean_geoms, crs = 3763)
+interfaces_buffer <- interfaces_buffer |> st_transform(4326)
+
+mapview(interfaces_buffer)
+
+ticketing_sf_joined <- st_join(
+    ticketing_sf |> select(id),
+    interfaces_buffer |> select(cod_interf),
+    join = st_within
+)
+
+interface_ticketing <- ticketing_sf_joined |>
+    st_drop_geometry() |>
+    filter(!is.na(cod_interf)) |>
+    group_by(cod_interf) |>
+    summarise(n = n())
+
+interface_ticketing_sf <- interfaces |>
+    select(cod_interf) |>
+    left_join(interface_ticketing) |>
+    mutate(n = ifelse(!is.na(n), n, 0))
+
+mapview(
+    interface_ticketing_sf,
+    zcol = "n",
+    layer.name = sprintf("Number of validations within %dm", INTERFACE_BUFFER_M)
+)
+
+# Overlap ticketing and grid --------------------------------------------------
+
+# > All tickets
+ticketing_in_grid <- st_join(
+    ticketing_sf |> select(id) |> rename(tid = id),
+    grid |> select(gid),
+    join = st_within
+)
+ticketing_in_grid |> sample_n(10)
+mapview(ticketing_in_grid |> filter(is.na(gid)))
+
+grid_ticketing_global <- ticketing_in_grid |>
+    st_drop_geometry() |>
+    filter(!is.na(gid)) |>
+    group_by(gid) |>
+    summarise(n = n())
+
+sum(grid_ticketing_global$n)
+mapview(grid |> left_join(grid_ticketing_global), zcol = "n")
+
+write.csv(
+    grid_ticketing_global,
+    sprintf("%s/grid_ticketing_global.csv", OUTPUT_FOLDER),
+    row.names = FALSE
+)
+
+# > Tickets at interfaces
+
+interfaces_in_grid = st_join(
+    interfaces |> select(cod_interf),
+    grid |> select(gid),
+    join = st_within
+)
+
+grid_ticketing_interfaces <- interfaces_in_grid |>
+  st_drop_geometry() |>
+  filter(!is.na(cod_interf)) |>
+  left_join(interface_ticketing_sf |> st_drop_geometry()) |> 
+  group_by(gid) |>
+  summarise(n = sum(n))
+
+sum(grid_ticketing_interfaces$n)
+mapview(grid |> left_join(grid_ticketing_interfaces), zcol = "n")
+
+write.csv(
+    grid_ticketing_interfaces,
+    sprintf("%s/grid_ticketing_interfaces.csv", OUTPUT_FOLDER),
+    row.names = FALSE
+)
