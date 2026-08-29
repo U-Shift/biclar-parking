@@ -218,27 +218,29 @@ summary(mubi_parking_requests$support)
 # Min. 1st Qu.  Median    Mean 3rd Qu.    Max.
 # 0.000   1.000   2.000   2.368   3.000  35.000
 
-## Tentativa de agregar dados OSM e MUBi
+# Aggregation of OSM and MUBi data -----
 
-# Agregação dados OSM (tornar polígonos em pontos e juntar tudo)
+## Consolidation of OSM data (turning polygons into points)
 
 osm_parking_centroids <- st_centroid(osm_parking_pygons)
 osm_parking_beta <- bind_rows(osm_parking_points, osm_parking_centroids)
+osm_parking_beta <- osm_parking_beta[!is.na(osm_parking_beta$amenity),] # removing vertices from polygon objects (which were in "osm_parking_points" without any data)
 osm_parking_beta <- osm_parking_beta |> select(osm_id, bicycle_parking, capacity, covered, geometry)
+
+
 #osm_parking_beta_filter <- osm_parking_beta |> filter(!is.na(capacity))
 #mapview(osm_parking_beta, zcol="capacity")
 #mapview(osm_parking_beta_filter, zcol="capacity")
 
-# Agregação de todos os dados
+# Fields for aggregating OSM and MUBi data
 # OSM -> osm_id, bicycle_parking (tipo de estrutura), capacity, covered, geometry; adicionar municipio
-# TML -> Municipio, cod_interf, X_capacidad, Oferta, PROCURA, geom
 # MUBi -> id, structureType, isCovered, slots, Concelho, geometry
-# Final -> ID, municipality, structure_type, is_covered, capacity, (supply, demand), geometry
+# Final -> data_source, ID, structure_type, capacity, is_covered, municipality, geometry
 
 # Adicionar municípios
 osm_parking_final <- st_join(osm_parking_beta, aml, join = st_within)
 
-# Standardizar nomes de colunas
+# Standardizing column names
 osm_parking_final <- osm_parking_final |> rename(
   ID = osm_id,
   municipality = Concelho,
@@ -263,16 +265,17 @@ mapview(mubi_parking_final, zcol="capacity")
 total_parking_beta <- bind_rows(osm_parking_final=osm_parking_final, mubi_parking_final=mubi_parking_final, .id="data_source")
 mapview(total_parking_beta, zcol="capacity")
 
-# Remoção de duplicados - Metodologia:
-# Buffer euclideano de raio "distance_threshold", criado para cada ponto de estacionamento
-# Se existir qualquer outro ponto dentro deste buffer (para além do original), são removidos os pontos que tiverem
-# OU nenhuma informação sobre a sua capacidade (i.e. "capacity == NA")
-# OU menor ou igual capacidade que o ponto estudado
-# dado que tanto os dados da MUBi como do OSM tinham muitos duplicados, mesmo analisando cada base de dados individualmente,
-# faz sentido apenas manter um ponto de estacionamento dentro de cada buffer especificado, sem haver grande preocupação com a fonte
+## Removing duplicates -----
+# Methodology:
+# Euclidean buffer of radius "distance_threshold", created for each parking location
+# If any point other than the original exists inside this buffer, the points with one of the following characteristics are removed:
+# OR no information on the points' capacity (i.e. "capacity == NA")
+# OR lower or equal capacity than the studied point
+# given that both OSM and MUBi databases had a lot of duplicate points (even within themselves)
+# it makes sense to keep only one parking location inside each buffer, without much regard to the point's source
 
 
-remove_duplicates <- function(points, distance_threshold, capacity_column, source_column) {
+remove_duplicates <- function(points, distance_threshold, capacity_column) {
   removal_list <- logical(nrow(points))
   distance_threshold <- units::set_units(distance_threshold, "m")
 
@@ -286,7 +289,6 @@ remove_duplicates <- function(points, distance_threshold, capacity_column, sourc
         nearby_capacities <- st_drop_geometry(points[nearby_points, ])[capacity_column]
         na_points <- nearby_points[is.na(nearby_capacities)] #points with NA capacity inside buffer
         lower_capacity <- nearby_points[which(nearby_capacities <= points[[capacity_column]][i] & !is.na(nearby_capacities))] #points with lower capacity than the evaluated one
-#       different_source <- nearby_points[which(nearby_capacities == points[[capacity_column]][i] & points[[source_column]][nearby_points] != points[[source_column]][i])] #points with same capacity but different sources
         points_to_remove <- c(na_points, lower_capacity)
         removal_list[points_to_remove] <- TRUE
     }
@@ -294,8 +296,58 @@ remove_duplicates <- function(points, distance_threshold, capacity_column, sourc
   return(points[!removal_list, ])
 }
 
-filtered_parking_final <- remove_duplicates(total_parking_beta, distance_threshold=10, capacity_column="capacity", source_column="data_source")
-mapview(filtered_parking_final, zcol="capacity")
+total_parking_final <- remove_duplicates(total_parking_beta, distance_threshold=25, capacity_column="capacity")
+mapview(total_parking_final, zcol="capacity")
+
+### Benchmarks for different distance_threshold -----
+# distance_threshold        nrow(total_parking_final)     difference from previous
+#         5m                          3043                           -
+#         10m                         2804                          239
+#         15m                         2653                          151
+#         20m                         2549                          104
+#         25m                         2482                          67
+#         30m                         2425                          57
+#         35m                         2350                          75
+#         40m                         2291                          59
+#         45m                         2232                          59
+#         50m                         2175                          57
+#         55m                         2110                          65
+#         60m                         2035                          75
+#         65m                         1960                          75
+#         70m                         1912                          48
+#         75m                         1869                          43
+#         100m                        1639
+
+#write_sf(osm_parking_final, "/data/biclar-parking/base/existing_parking/aml_osm_parking.gpkg")
+#write_sf(mubi_parking_final, "/data/biclar-parking/base/existing_parking/aml_mubi_parking.gpkg")
+write_sf(total_parking_final, "/data/biclar-parking/base/existing_parking/aml_total_parking.gpkg")
+
+
+### Comparing different data sources (i.e. points that are lacking in one) -----
+
+lacking_points <- function(base_source, check_source, distance_threshold) { #distance_threshold should be the same as in the function "remove duplicates"
+  removal_list <- logical(nrow(base_source))
+  distance_threshold <- units::set_units(distance_threshold, "m")
+  points_to_remove <- c()
+
+  for (i in 1:nrow(base_source)) {
+    if (removal_list[i]) next
+    distances <- st_distance(base_source[i, ], check_source)
+    distances_n <- as.numeric(distances)
+    nearby_points <- which(distances<distance_threshold & distances>units::set_units(0,"m"))
+
+    if (length(nearby_points)>0) {
+      points_to_remove <- c(points_to_remove, i)
+      removal_list[points_to_remove] <- TRUE
+    }
+  }
+  return(base_source[!removal_list, ])
+}
+
+osm_lacking_points <- lacking_points(remove_duplicates(mubi_parking_final, distance_threshold=25, capacity_column="capacity"), osm_parking_final, distance_threshold=25)
+mapview(osm_parking_final, col.regions="darkblue") + mapview(osm_lacking_points, col.regions="red")
+
+
 
 
 ## Reviews of existing infrastructure  ---------------------------------------------------
