@@ -120,22 +120,22 @@ Seixal_cycleways <- Seixal_cycleways[!is.na(Seixal_cycleways$Data_Inau), ] # Ina
 
 
 ### Fields ------------------------------------------------------------------
-# Keep fields "name", "cycle_segregation", "direction", "geom", "municipality"
+# Keep fields "name", "mun_class", "direction", "geom", "municipality"
 Cascais_cycleways <- Cascais_cycleways |>
   select(tipo, designacao, geometry, municipality) |>
-  rename(cycle_segregation = tipo, name = designacao, geom = geometry)
+  rename(mun_class = tipo, name = designacao, geom = geometry)
 
 Lisboa_cycleways <- Lisboa_cycleways |>
   select(DESIGNACAO, TIPOLOGIA, SHAPE, municipality) |>
-  rename(name = DESIGNACAO, cycle_segregation = TIPOLOGIA, geom = SHAPE)
+  rename(name = DESIGNACAO, mun_class = TIPOLOGIA, geom = SHAPE)
 
 Seixal_cycleways <- Seixal_cycleways |>
   select(SEGMENTO_I, TIPOLOGIA, geom, municipality) |>
-  rename(name = SEGMENTO_I, cycle_segregation = TIPOLOGIA)
+  rename(name = SEGMENTO_I, mun_class = TIPOLOGIA)
 
 # Standardize cycle_segregation
 Cascais_cycleways <- Cascais_cycleways |>
-    mutate(cycle_segregation = recode(cycle_segregation,
+    mutate(cycle_segregation = recode(mun_class,
                                       "Corredor ciclável" = "Cycle track or lane",
                                       "Pista ciclável" = "Cycle track or lane",
                                       "Via banalizada" = "Advisory lane",
@@ -144,7 +144,7 @@ Cascais_cycleways <- Cascais_cycleways |>
       )
 
 Lisboa_cycleways <- Lisboa_cycleways |>
-  mutate(cycle_segregation = recode(cycle_segregation,
+  mutate(cycle_segregation = recode(mun_class,
                                     "30+Bici" = "Advisory lane",
                                     "Zona de Coexistência" = "Advisory lane",
                                     "Pista Ciclável Unidirecional" = "Cycle track or lane",
@@ -157,7 +157,7 @@ Lisboa_cycleways <- Lisboa_cycleways |>
   )
 
 Seixal_cycleways <- Seixal_cycleways |>
-  mutate(cycle_segregation = recode(cycle_segregation,
+  mutate(cycle_segregation = recode(mun_class,
                                     "Misto com automóveis (rede viária)" = "Advisory lane",
                                     "Faixa ciclável" = "Cycle track or lane",
                                     "Pista Ciclável" = "Cycle track or lane",
@@ -168,6 +168,7 @@ Seixal_cycleways <- Seixal_cycleways |>
 
 ## Join Municipalities -----------------------------------------------------
 aml_municipality_cycleways <- rbind(Cascais_cycleways, Lisboa_cycleways, Seixal_cycleways)
+aml_municipality_cycleways$length = st_length(aml_municipality_cycleways) |> units::drop_units() |> round()
 mapview(aml_municipality_cycleways)
 
 ### SEIXAL não está a aparecer depois de fazer bind, e não encontro o erro.
