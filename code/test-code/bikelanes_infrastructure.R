@@ -55,12 +55,12 @@ table(aml_cyclelanes_planned$Municipio_)
 mapview(aml_cyclelanes_existant, color="darkgreen") + mapview(aml_cyclelanes_planned, color="orange")
 
 # OSM cycleway data -------------------------------------------------------
-osm_cyclelanes <- st_read("/data/IMPT/mobility/cycle_network_class.gpkg") |> st_transform(4326)
-nrow(osm_cyclelanes)
-summary(osm_cyclelanes)
-#mapview(osm_cyclelanes)
+aml_osm_cycleways <- st_read("/data/IMPT/mobility/cycle_network_class.gpkg") |> st_transform(4326)
+nrow(aml_osm_cycleways)
+summary(aml_osm_cycleways)
+#mapview(aml_osm_cycleways)
 
-#osm_protected_cyclelanes <- osm_cyclelanes[osm_cyclelanes$cycle_segregation != "Advisory lane",]
+#osm_protected_cyclelanes <- aml_osm_cycleways[aml_osm_cycleways$cycle_segregation != "Advisory lane",]
 #mapview(osm_protected_cyclelanes)
 
 
@@ -171,7 +171,14 @@ aml_municipality_cycleways <- rbind(Cascais_cycleways, Lisboa_cycleways, Seixal_
 aml_municipality_cycleways$length = st_length(aml_municipality_cycleways) |> units::drop_units() |> round()
 mapview(aml_municipality_cycleways)
 
-### SEIXAL não está a aparecer depois de fazer bind, e não encontro o erro.
-### não só aparece se for corrido isoladamente, como aparece no qgis se exportar o ficheiro
+### SEIXAL não está a aparecer no mapa depois de fazer bind, e não encontro o erro.
+### não só aparece se for corrido isoladamente, como aparece na tabela, e no qgis se exportar o ficheiro
 
-write_sf(aml_municipality_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_municipality_cycleways.gpkg")
+#write_sf(aml_osm_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_osm_cycleways.gpkg")
+#write_sf(aml_municipality_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_municipality_cycleways.gpkg")
+mapview(aml_cyclelanes_existant, color="darkgreen") + mapview(osm_cycleways, color="red") + mapview(aml_municipality_cycleways, color="darkblue")
+
+
+# Compare all sources -----------------------------------------------------
+intersection_osm_mun <- st_intersection (aml_osm_cycleways, aml_municipality_cycleways)
+
