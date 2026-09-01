@@ -176,9 +176,14 @@ mapview(aml_municipality_cycleways)
 
 #write_sf(aml_osm_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_osm_cycleways.gpkg")
 #write_sf(aml_municipality_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_municipality_cycleways.gpkg")
-mapview(aml_cyclelanes_existant, color="darkgreen") + mapview(osm_cycleways, color="red") + mapview(aml_municipality_cycleways, color="darkblue")
+mapview(osm_cycleways, color="red") + mapview(aml_municipality_cycleways, color="darkblue")
 
 
 # Compare all sources -----------------------------------------------------
-intersection_osm_mun <- st_intersection (aml_osm_cycleways, aml_municipality_cycleways)
+
+
+
+
+
+
 
