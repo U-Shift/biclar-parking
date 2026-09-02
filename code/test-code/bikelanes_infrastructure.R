@@ -188,5 +188,5 @@ osm_buffer <- st_buffer(aml_osm_cycleways, buffer_distance) |> st_union()
 # aml_cyclelanes_existant_buffer <- st_buffer(aml_cyclelanes_existant, buffer_distance)
 
 # diff_osm_mun_cycleways <- aml_municipality_cycleways |>
-#   mutate(geometry = st_difference(geometry, osm_buffer))
+#   mutate(geometry = st_difference(geometry, osm_buffer)) ##not working
 
