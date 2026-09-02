@@ -96,11 +96,10 @@ stopifnot(
 
 # --- Configuration flags ---
 
-# Parallelism — safe to use because checkpoints are written to a LOCAL directory
-# (checkpoints/dasymetric_combined/), not to the sshfs-mounted data/ folder.
-# With 28 cores and ~107 GB free RAM, 8 workers is a conservative choice;
-# raise to 12-14 if RAM stays below 80 GB during the first few chunks.
-N_WORKERS <- 8
+# Local checkpoints (not the sshfs-mounted data/ folder). N_WORKERS reduced
+# from Rosa's original 8 (tuned for her machine: 28 cores, ~107GB RAM) to 4,
+# matching this shared server's specs (8 cores, ~26GB available at time of run).
+N_WORKERS <- 4
 plan(multisession, workers = N_WORKERS)
 
 target_crs <- 3763 # EPSG:3763 — Portugal metric CRS

@@ -13,3 +13,9 @@ grid_ticketing_interfaces = read.csv("data/analysis/ticketing/grid_ticketing_int
 # Dasymetric population map (COS + Global Building Atlas combined) - 03_dasymetric_combined.R
 grid_dasymetric = sf::st_read("data/base/daysimetric/grid_dasymetric_combined.gpkg", quiet = TRUE)
 grid_dasymetric_csv = read.csv("data/base/daysimetric/grid_dasymetric_combined.csv")
+
+# --- 04_building_attributes.R -------------------------------------------------
+# Building characteristics on the H3 grid: BGRI-derived counts (dasymetric,
+# reusing 03's weight hierarchy) + Global Building Atlas per-building stats.
+grid_building_attributes     <- sf::st_read("data/base/daysimetric/grid_building_attributes.gpkg", quiet = TRUE)
+grid_building_attributes_csv <- read.csv("data/base/daysimetric/grid_building_attributes.csv")
