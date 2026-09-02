@@ -55,7 +55,7 @@ table(aml_cyclelanes_planned$Municipio_)
 mapview(aml_cyclelanes_existant, color="darkgreen") + mapview(aml_cyclelanes_planned, color="orange")
 
 # OSM cycleway data -------------------------------------------------------
-aml_osm_cycleways <- st_read("/data/IMPT/mobility/cycle_network_class.gpkg") |> st_transform(4326)
+aml_osm_cycleways <- st_read("/data/IMPT/mobility/cycle_network_class.gpkg") |> st_transform(3763)
 nrow(aml_osm_cycleways)
 summary(aml_osm_cycleways)
 #mapview(aml_osm_cycleways)
@@ -110,10 +110,15 @@ Seixal_cycleways <- st_read(list_cycleways[3]) |> mutate(municipality = gsub("/d
 
 
 ## Standardize cycleway data ---------------------------------------------
-### CRS (Standardize as 4326) --------------------------------------------
-Cascais_cycleways <- Cascais_cycleways |> st_transform(4326)
-Lisboa_cycleways <- Lisboa_cycleways |> st_transform(4326)
-Seixal_cycleways <- Seixal_cycleways |> st_transform(4326)
+### CRS (Standardize as 3763) --------------------------------------------
+Cascais_cycleways <- Cascais_cycleways |> st_transform(3763)
+Lisboa_cycleways <- Lisboa_cycleways |> st_transform(3763)
+Seixal_cycleways <- Seixal_cycleways |> st_transform(3763)
+
+### Remove empty geometries --------------------------------------------
+Cascais_cycleways <- Cascais_cycleways[!st_is_empty(Cascais_cycleways), ]
+Lisboa_cycleways <- Lisboa_cycleways[!st_is_empty(Lisboa_cycleways), ]
+Seixal_cycleways <- Seixal_cycleways[!st_is_empty(Seixal_cycleways), ]
 
 ### Only existing network ---------------------------------------------------------------
 Seixal_cycleways <- Seixal_cycleways[!is.na(Seixal_cycleways$Data_Inau), ] # Inauguration date has to exist
@@ -123,19 +128,19 @@ Seixal_cycleways <- Seixal_cycleways[!is.na(Seixal_cycleways$Data_Inau), ] # Ina
 # Keep fields "name", "mun_class", "direction", "geom", "municipality"
 Cascais_cycleways <- Cascais_cycleways |>
   select(tipo, designacao, geometry, municipality) |>
-  rename(mun_class = tipo, name = designacao, geom = geometry)
+  rename(type_original = tipo, name = designacao)
 
 Lisboa_cycleways <- Lisboa_cycleways |>
   select(DESIGNACAO, TIPOLOGIA, SHAPE, municipality) |>
-  rename(name = DESIGNACAO, mun_class = TIPOLOGIA, geom = SHAPE)
+  rename(name = DESIGNACAO, type_original = TIPOLOGIA, geometry = SHAPE)
 
 Seixal_cycleways <- Seixal_cycleways |>
   select(SEGMENTO_I, TIPOLOGIA, geom, municipality) |>
-  rename(name = SEGMENTO_I, mun_class = TIPOLOGIA)
+  rename(name = SEGMENTO_I, type_original = TIPOLOGIA, geometry = geom)
 
 # Standardize cycle_segregation
 Cascais_cycleways <- Cascais_cycleways |>
-    mutate(cycle_segregation = recode(mun_class,
+    mutate(cycle_segregation = recode(type_original,
                                       "Corredor ciclável" = "Cycle track or lane",
                                       "Pista ciclável" = "Cycle track or lane",
                                       "Via banalizada" = "Advisory lane",
@@ -144,7 +149,7 @@ Cascais_cycleways <- Cascais_cycleways |>
       )
 
 Lisboa_cycleways <- Lisboa_cycleways |>
-  mutate(cycle_segregation = recode(mun_class,
+  mutate(cycle_segregation = recode(type_original,
                                     "30+Bici" = "Advisory lane",
                                     "Zona de Coexistência" = "Advisory lane",
                                     "Pista Ciclável Unidirecional" = "Cycle track or lane",
@@ -157,7 +162,7 @@ Lisboa_cycleways <- Lisboa_cycleways |>
   )
 
 Seixal_cycleways <- Seixal_cycleways |>
-  mutate(cycle_segregation = recode(mun_class,
+  mutate(cycle_segregation = recode(type_original,
                                     "Misto com automóveis (rede viária)" = "Advisory lane",
                                     "Faixa ciclável" = "Cycle track or lane",
                                     "Pista Ciclável" = "Cycle track or lane",
@@ -169,21 +174,19 @@ Seixal_cycleways <- Seixal_cycleways |>
 ## Join Municipalities -----------------------------------------------------
 aml_municipality_cycleways <- rbind(Cascais_cycleways, Lisboa_cycleways, Seixal_cycleways)
 aml_municipality_cycleways$length = st_length(aml_municipality_cycleways) |> units::drop_units() |> round()
-mapview(aml_municipality_cycleways)
 
-### SEIXAL não está a aparecer no mapa depois de fazer bind, e não encontro o erro.
-### não só aparece se for corrido isoladamente, como aparece na tabela, e no qgis se exportar o ficheiro
 
-#write_sf(aml_osm_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_osm_cycleways.gpkg")
-#write_sf(aml_municipality_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_municipality_cycleways.gpkg")
-mapview(osm_cycleways, color="red") + mapview(aml_municipality_cycleways, color="darkblue")
+# write_sf(aml_osm_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_osm_cycleways.gpkg")
+# write_sf(aml_municipality_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_municipality_cycleways.gpkg")
+mapview(aml_osm_cycleways, color="red") + mapview(aml_municipality_cycleways, color="darkblue")
 
 
 # Compare all sources -----------------------------------------------------
+buffer_distance <- 10
+osm_buffer <- st_buffer(aml_osm_cycleways, buffer_distance) |> st_union()
+# aml_municipality_cycleways_buffer <- st_buffer(aml_municipality_cycleways, buffer_distance)
+# aml_cyclelanes_existant_buffer <- st_buffer(aml_cyclelanes_existant, buffer_distance)
 
-
-
-
-
-
+# diff_osm_mun_cycleways <- aml_municipality_cycleways |>
+#   mutate(geometry = st_difference(geometry, osm_buffer))
 
