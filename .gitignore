@@ -5,3 +5,4 @@ data
 .Rhistory
 *.log
 checkpoints/
+code/daysimetric-map/biclar-parking.code-workspace
