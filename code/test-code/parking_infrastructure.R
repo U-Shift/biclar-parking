@@ -10,8 +10,8 @@ library(units)
 lisbon_parking_points <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/cml_ciclovia_estacionamento/items?f=json&limit=1000") |>
   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/cml_ciclovia_estacionamento/items?f=json&limit=1000&offset=1000")) |>
   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/cml_ciclovia_estacionamento/items?f=json&limit=1000&offset=2000"))
-nrow(aml_parking_points) # 2209
-summary(aml_parking_points)
+nrow(lisbon_parking_points) # 2209
+summary(lisbon_parking_points)
 
 summary(lisbon_parking_points$CAPACIDADE)
 # Min. 1st Qu.  Median    Mean 3rd Qu.    Max.     NAs
@@ -218,10 +218,10 @@ summary(mubi_parking_requests$support)
 # Min. 1st Qu.  Median    Mean 3rd Qu.    Max.
 # 0.000   1.000   2.000   2.368   3.000  35.000
 
-# Aggregation of OSM and MUBi data -----
+
+# Aggregation of OSM and MUBi data ---------------------------------------
 
 ## Consolidation of OSM data (turning polygons into points)
-
 osm_parking_centroids <- st_centroid(osm_parking_pygons)
 osm_parking_beta <- bind_rows(osm_parking_points, osm_parking_centroids)
 osm_parking_beta <- osm_parking_beta[!is.na(osm_parking_beta$amenity),] # removing vertices from polygon objects (which were in "osm_parking_points" without any data)
@@ -237,7 +237,7 @@ osm_parking_beta <- osm_parking_beta |> select(osm_id, bicycle_parking, capacity
 # MUBi -> id, structureType, isCovered, slots, Concelho, geometry
 # Final -> data_source, ID, structure_type, capacity, is_covered, municipality, geometry
 
-# Adicionar municípios
+# Add municípios
 osm_parking_final <- st_join(osm_parking_beta, aml, join = st_within)
 
 # Standardizing column names
@@ -265,7 +265,8 @@ mapview(mubi_parking_final, zcol="capacity")
 total_parking_beta <- bind_rows(osm_parking_final=osm_parking_final, mubi_parking_final=mubi_parking_final, .id="data_source")
 mapview(total_parking_beta, zcol="capacity")
 
-## Removing duplicates -----
+
+## Function to remove duplicates -------------------------------------------
 # Methodology:
 # Euclidean buffer of radius "distance_threshold", created for each parking location
 # If any point other than the original exists inside this buffer, the points with one of the following characteristics are removed:
@@ -299,7 +300,7 @@ remove_duplicates <- function(points, distance_threshold, capacity_column) {
 total_parking_final <- remove_duplicates(total_parking_beta, distance_threshold=25, capacity_column="capacity")
 mapview(total_parking_final, zcol="capacity")
 
-### Benchmarks for different distance_threshold -----
+### Benchmarks for different distance thresholds --------------------------
 # distance_threshold        nrow(total_parking_final)     difference from previous
 #         5m                          3043                           -
 #         10m                         2804                          239
@@ -323,8 +324,7 @@ mapview(total_parking_final, zcol="capacity")
 write_sf(total_parking_final, "/data/biclar-parking/base/existing_parking/aml_total_parking.gpkg")
 
 
-### Comparing different data sources (i.e. points that are lacking in one) -----
-
+## Function to compare different data sources (i.e. points that are lacking in one) --------
 lacking_points <- function(base_source, check_source, distance_threshold) { #distance_threshold should be the same as in the function "remove duplicates"
   removal_list <- logical(nrow(base_source))
   distance_threshold <- units::set_units(distance_threshold, "m")
