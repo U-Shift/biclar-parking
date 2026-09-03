@@ -65,6 +65,7 @@ for (i in 1:nrow(regions)) { # i = 1
         vec <- unlist(regions$vehicle_types[[i]])
         vehicle_types <- data.frame(
             vehicle_type = vec,
+            form_factor = vec,
             id = seq_along(vec)
         )
         write.csv(vehicle_types, paste0(base_folder, "/vehicle_types.csv"), row.names = FALSE)

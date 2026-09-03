@@ -1,31 +1,35 @@
+source("code/00_data_load.R")
 
-folder = "data/analysis/gbfs/emel_gira"
-folder = "data/analysis/gbfs"
-period = "week"
-hour_start = 6
-hour_end = 9
+folder <- "data/analysis/gbfs" # or specific operator: "data/analysis/gbfs/emel_gira", "data/analysis/gbfs/bird_almada"
+period <- "all"
+hour_start <- 0
+hour_end <- 24
 
-data = read.csv(paste0(folder, "/grid_metrics_", period, "_", hour_start, "-", hour_end, ".csv"))
-data_grid = grid |> left_join(data, by = "gid") |> filter(n_updates > 0) |>
-  mutate(
-    bikes_rented_capacity_ratio = round(bikes_rented / capacity, 2),
-    bikes_returned_capacity_ratio = round(bikes_returned / capacity, 2)
-  )
+data <- read.csv(paste0(folder, "/grid_bikes_", period, "_", hour_start, "-", hour_end, ".csv"))
+data_grid <- grid |>
+  left_join(data, by = "gid") |>
+  filter(n_updates > 0, n_vehicles > 0)
 
-mapview(municipalities, alpha.regions=0) +
-  mapview(data_grid, zcol="bikes_rented_capacity_ratio", layer.name = "Rented/capacity ratio", legend=TRUE)
-mapview(municipalities, alpha.regions=0) +
-  mapview(data_grid, zcol="bikes_returned_capacity_ratio", layer.name = "Returned/capacity ratio", legend=TRUE)
+# Quick spatial overview
+mapview(municipalities, alpha.regions = 0, color = "black", lwd = 1.5) +
+  mapview(data_grid, zcol = "avg_vehicles_per_update", layer.name = "Avg vehicles/update", legend = TRUE)
 
-mapview(municipalities, alpha.regions=0) +
-  mapview(data_grid, zcol="bikes_n_max", layer.name = "Max nr bikes", legend=TRUE)
+# Detailed breakdown by available vehicle types and metrics
+m <- mapview(municipalities, alpha.regions = 0, color = "black", lwd = 1.5) +
+  mapview(data_grid, zcol = "avg_vehicles_per_update", layer.name = "Avg vehicles/update", legend = TRUE) +
+  mapview(data_grid, zcol = "n_vehicles", layer.name = "Total vehicle counts", legend = TRUE, hide = TRUE) +
+  mapview(data_grid, zcol = "n_updates", layer.name = "Total updates", legend = TRUE, hide = TRUE)
 
-mapview(municipalities, alpha.regions=0) +
-  mapview(data_grid, zcol="occupancy_ratio_max", layer.name = "Max bike occupancy", legend=TRUE)
+if ("n_operators" %in% names(data_grid)) {
+  m <- m + mapview(data_grid, zcol = "n_operators", layer.name = "Operators count", legend = TRUE, hide = TRUE)
+}
 
-mapview(data_grid, zcol="n_stations", layer.name = "Number of stations", legend=TRUE) +
-  mapview(data_grid, zcol="capacity", layer.name = "Capacity", legend=TRUE, hide=TRUE) +
-  mapview(data_grid, zcol="bikes_rented", layer.name = "Bikes rented", legend=TRUE, hide = TRUE) +
-  mapview(data_grid, zcol="bikes_returned", layer.name = "Bikes returned", legend=TRUE, hide =TRUE)
+if ("avg_bicycle_per_update" %in% names(data_grid)) {
+  m <- m + mapview(data_grid, zcol = "avg_bicycle_per_update", layer.name = "Avg bicycles/update", legend = TRUE, hide = TRUE)
+}
 
+if ("avg_scooter_per_update" %in% names(data_grid)) {
+  m <- m + mapview(data_grid, zcol = "avg_scooter_per_update", layer.name = "Avg scooters/update", legend = TRUE, hide = TRUE)
+}
 
+m
