@@ -179,6 +179,7 @@ aml_municipality_cycleways$length = st_length(aml_municipality_cycleways) |> uni
 # write_sf(aml_osm_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_osm_cycleways.gpkg")
 # write_sf(aml_municipality_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_municipality_cycleways.gpkg")
 mapview(aml_osm_cycleways, color="red") + mapview(aml_municipality_cycleways, color="darkblue")
+mapview(aml_municipality_cycleways, color="red",alpha=1,lwd=7) + mapview(aml_osm_cycleways, color="yellow", alpha=0.5, lwd=7)
 
 
 # Compare all sources -----------------------------------------------------
