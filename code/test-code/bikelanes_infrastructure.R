@@ -55,7 +55,7 @@ table(aml_cyclelanes_planned$Municipio_)
 mapview(aml_cyclelanes_existant, color="darkgreen") + mapview(aml_cyclelanes_planned, color="orange")
 
 # OSM cycleway data -------------------------------------------------------
-aml_osm_cycleways <- st_read("/data/IMPT/mobility/cycle_network_class.gpkg") |> st_transform(3763)
+aml_osm_cycleways <- st_read("/data/biclar-parking/raw/cycling_network/osm/osm_20260903.gpkg") |> st_transform(3763)
 nrow(aml_osm_cycleways)
 summary(aml_osm_cycleways)
 #mapview(aml_osm_cycleways)
@@ -79,7 +79,7 @@ municipalities <- parishes |>
   )
 
 ## Get cycleway data for every available municipality ----------------------
-list_cycleways = list.files(path = "/data/biclar-parking/raw/cycling_network", full.names=TRUE)
+list_cycleways = list.files(path = "/data/biclar-parking/raw/cycling_network/municipalities", full.names=TRUE)
 
 # aml_mun_cycleways <- list()
 # for (file in list_cycleways) {
@@ -93,8 +93,8 @@ list_cycleways = list.files(path = "/data/biclar-parking/raw/cycling_network", f
 # Almada_cycleways
 # Amadora_cycleways
 # Barreiro_cycleways
-Cascais_cycleways <- st_read(list_cycleways[1]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/|\\..*$", "", list_cycleways[1]))
-Lisboa_cycleways <- st_read(list_cycleways[2]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/|\\..*$", "", list_cycleways[2]))
+Cascais_cycleways <- st_read(list_cycleways[1]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities |\\..*$", "", list_cycleways[1]))
+Lisboa_cycleways <- st_read(list_cycleways[2]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities |\\..*$", "", list_cycleways[2]))
 # Loures_cycleways
 # Mafra_cycleways
 # Moita_cycleways
@@ -102,7 +102,7 @@ Lisboa_cycleways <- st_read(list_cycleways[2]) |> mutate(municipality = gsub("/d
 # Odivelas_cycleways
 # Oeiras_cycleways
 # Palmela_cycleways
-Seixal_cycleways <- st_read(list_cycleways[3]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/|\\..*$", "", list_cycleways[3]))
+Seixal_cycleways <- st_read(list_cycleways[3]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities |\\..*$", "", list_cycleways[3]))
 # Sesimbra_cycleways
 # Setúbal_cycleways
 # Sintra_cycleways
