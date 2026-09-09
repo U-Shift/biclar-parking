@@ -93,8 +93,8 @@ list_cycleways = list.files(path = "/data/biclar-parking/raw/cycling_network/mun
 # Almada_cycleways
 # Amadora_cycleways
 # Barreiro_cycleways
-Cascais_cycleways <- st_read(list_cycleways[1]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities |\\..*$", "", list_cycleways[1]))
-Lisboa_cycleways <- st_read(list_cycleways[2]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities |\\..*$", "", list_cycleways[2]))
+Cascais_cycleways <- st_read(list_cycleways[1]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities/|\\..*$", "", list_cycleways[1]))
+Lisboa_cycleways <- st_read(list_cycleways[2]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities/|\\..*$", "", list_cycleways[2]))
 # Loures_cycleways
 # Mafra_cycleways
 # Moita_cycleways
@@ -102,7 +102,7 @@ Lisboa_cycleways <- st_read(list_cycleways[2]) |> mutate(municipality = gsub("/d
 # Odivelas_cycleways
 # Oeiras_cycleways
 # Palmela_cycleways
-Seixal_cycleways <- st_read(list_cycleways[3]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities |\\..*$", "", list_cycleways[3]))
+Seixal_cycleways <- st_read(list_cycleways[3]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities/|\\..*$", "", list_cycleways[3]))
 # Sesimbra_cycleways
 # Setúbal_cycleways
 # Sintra_cycleways
@@ -138,13 +138,13 @@ Seixal_cycleways <- Seixal_cycleways |>
   select(SEGMENTO_I, TIPOLOGIA, geom, municipality) |>
   rename(name = SEGMENTO_I, type_original = TIPOLOGIA, geometry = geom)
 
-# Standardize cycle_segregation
+# Standardize cycle_segregation -------------------------------------------
 Cascais_cycleways <- Cascais_cycleways |>
     mutate(cycle_segregation = recode(type_original,
-                                      "Corredor ciclável" = "Cycle track or lane",
-                                      "Pista ciclável" = "Cycle track or lane",
+                                      "Corredor ciclável" = "Cycle track or lane", ### "Corredor ciclável" means uni-directional cycle lanes along a each side of a road, segregated only with paint.
+                                      "Pista ciclável" = "Cycle track or lane", ### "Pista ciclável" means a bi-directional cycle lane, somewhat segregated from traffic (by a curb or bollards).
                                       "Via banalizada" = "Advisory lane",
-                                      "Trilhos ciclaveis" = "Protected Active"
+                                      "Trilhos ciclaveis" = "Off-road track"
                                       )
       )
 
@@ -156,7 +156,7 @@ Lisboa_cycleways <- Lisboa_cycleways |>
                                     "Pista Ciclável Bidirecional" = "Cycle track or lane",
                                     "Faixa Ciclável" = "Cycle track or lane",
                                     "Contrassentido" = "Cycle track or lane",
-                                    "Trilho" = "Protected Active",
+                                    "Trilho" = "Off-road track",
                                     "Percurso Ciclopedonal" = "Protected Active"
                                     )
   )
@@ -164,8 +164,8 @@ Lisboa_cycleways <- Lisboa_cycleways |>
 Seixal_cycleways <- Seixal_cycleways |>
   mutate(cycle_segregation = recode(type_original,
                                     "Misto com automóveis (rede viária)" = "Advisory lane",
-                                    "Faixa ciclável" = "Cycle track or lane",
-                                    "Pista Ciclável" = "Cycle track or lane",
+                                    "Faixa ciclável" = "Cycle track or lane", ### "Corredor ciclável" means uni-directional cycle lanes along a each side of a road, segregated either with paint or a curb.
+                                    "Pista Ciclável" = "Cycle track or lane", ### "Pista ciclável" means a cycle lane (either uni or bi-directional), somewhat segregated from traffic..
                                     "Misto com peões" = "Protected Active"
                                     )
   )
@@ -178,16 +178,36 @@ aml_municipality_cycleways$length = st_length(aml_municipality_cycleways) |> uni
 
 # write_sf(aml_osm_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_osm_cycleways.gpkg")
 # write_sf(aml_municipality_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_municipality_cycleways.gpkg")
-mapview(aml_osm_cycleways, color="red") + mapview(aml_municipality_cycleways, color="darkblue")
+mapview(aml_osm_cycleways, color="red") + mapview(aml_municipality_cycleways, color="darkblue") + mapview(aml_cyclelanes_existant, color="darkgreen")
 mapview(aml_municipality_cycleways, color="red",alpha=1,lwd=7) + mapview(aml_osm_cycleways, color="yellow", alpha=0.5, lwd=7)
 
 
-# Compare all sources -----------------------------------------------------
+# Compare sources -----------------------------------------------------
 buffer_distance <- 10
-osm_buffer <- st_buffer(aml_osm_cycleways, buffer_distance) |> st_union()
-# aml_municipality_cycleways_buffer <- st_buffer(aml_municipality_cycleways, buffer_distance)
-# aml_cyclelanes_existant_buffer <- st_buffer(aml_cyclelanes_existant, buffer_distance)
+aml_osm_cycleways_buffer <- st_buffer(aml_osm_cycleways, buffer_distance) |> st_union()
+aml_municipality_cycleways_buffer <- st_buffer(aml_municipality_cycleways, buffer_distance)
+aml_cyclelanes_existant_buffer <- st_buffer(aml_cyclelanes_existant, buffer_distance)
 
-# diff_osm_mun_cycleways <- aml_municipality_cycleways |>
-#   mutate(geometry = st_difference(geometry, osm_buffer)) ##not working
+# Function to calculate percentage of overlap between a united buffer (usually OSM) and another object composed of multiple buffers
+buffer_overlap <- function (union_buffer, multiple_buffer){
+  overlap_percentages <- c()
+  for (i in 1:nrow(multiple_buffer)){
+    single_buffer <- multiple_buffer[i,]
+    intersection <- st_intersection(single_buffer, union_buffer) # Overlap between buffers
 
+    # Calculate overlap area
+    if (nrow(intersection) > 0 && !is.null(intersection)) {
+      overlap_area <- sum(st_area(intersection))
+    } else {
+      overlap_area <- 0
+    }
+    buffer_area <- st_area(single_buffer)
+    overlap_percentages <- c(overlap_percentages,as.numeric(overlap_area / buffer_area)*100)
+  }
+  return(overlap_percentages)
+}
+
+aml_municipality_cycleways$overlap_percentages <- buffer_overlap(aml_osm_cycleways_buffer, aml_municipality_cycleways_buffer)
+osm_lacking_cycleways <- subset(aml_municipality_cycleways, overlap_percentages <= 80)
+
+mapview(osm_lacking_cycleways, color="red") + mapview(aml_osm_cycleways, color="darkblue")
