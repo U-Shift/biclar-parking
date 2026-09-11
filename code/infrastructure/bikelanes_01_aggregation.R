@@ -52,7 +52,7 @@ table(aml_cyclelanes_planned$Municipio_)
 # Sesimbra             Setúbal              Sintra Vila Franca de Xira
 # 110                  77                  13                 168
 
-mapview(aml_cyclelanes_existant, color="darkgreen") + mapview(aml_cyclelanes_planned, color="orange")
+#mapview(aml_cyclelanes_existant, color="darkgreen") + mapview(aml_cyclelanes_planned, color="orange")
 
 # OSM cycleway data -------------------------------------------------------
 aml_osm_cycleways <- st_read("/data/biclar-parking/raw/cycling_network/osm/osm_20260903.gpkg") |> st_transform(3763)
@@ -105,7 +105,7 @@ Lisboa_cycleways <- st_read(list_cycleways[2]) |> mutate(municipality = gsub("/d
 Seixal_cycleways <- st_read(list_cycleways[3]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities/|\\..*$", "", list_cycleways[3]))
 # Sesimbra_cycleways
 # Setúbal_cycleways
-# Sintra_cycleways
+Sintra_cycleways <- st_read(list_cycleways[4]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities/|\\..*$", "", list_cycleways[4]))
 # VFX_cycleways
 
 
@@ -114,11 +114,19 @@ Seixal_cycleways <- st_read(list_cycleways[3]) |> mutate(municipality = gsub("/d
 Cascais_cycleways <- Cascais_cycleways |> st_transform(3763)
 Lisboa_cycleways <- Lisboa_cycleways |> st_transform(3763)
 Seixal_cycleways <- Seixal_cycleways |> st_transform(3763)
+Sintra_cycleways <- Sintra_cycleways |> st_transform(3763)
 
 ### Remove empty geometries --------------------------------------------
 Cascais_cycleways <- Cascais_cycleways[!st_is_empty(Cascais_cycleways), ]
 Lisboa_cycleways <- Lisboa_cycleways[!st_is_empty(Lisboa_cycleways), ]
 Seixal_cycleways <- Seixal_cycleways[!st_is_empty(Seixal_cycleways), ]
+Sintra_cycleways <- Sintra_cycleways[!st_is_empty(Sintra_cycleways), ]
+
+### Remove Z/M geometry parameter --------------------------------------------
+Cascais_cycleways <- st_zm(Cascais_cycleways)
+Lisboa_cycleways <- st_zm(Lisboa_cycleways)
+Seixal_cycleways <- st_zm(Seixal_cycleways)
+Sintra_cycleways <- st_zm(Sintra_cycleways)
 
 ### Only existing network ---------------------------------------------------------------
 Seixal_cycleways <- Seixal_cycleways[!is.na(Seixal_cycleways$Data_Inau), ] # Inauguration date has to exist
@@ -137,6 +145,18 @@ Lisboa_cycleways <- Lisboa_cycleways |>
 Seixal_cycleways <- Seixal_cycleways |>
   select(SEGMENTO_I, TIPOLOGIA, geom, municipality) |>
   rename(name = SEGMENTO_I, type_original = TIPOLOGIA, geometry = geom)
+
+Sintra_cycleways <- Sintra_cycleways |>
+  select(tipologia, observacoe, geom, municipality) |>
+  rename(name = observacoe, type_original = tipologia, geometry = geom)
+
+
+### Remove rows with N/A type_original (there were some cycleways whose geometry made no sense and didn't correspond to reality) ----------------
+Cascais_cycleways <- Cascais_cycleways[!is.na(Cascais_cycleways$type_original), ]
+Lisboa_cycleways <- Lisboa_cycleways[!is.na(Lisboa_cycleways$type_original), ]
+Seixal_cycleways <- Seixal_cycleways[!is.na(Seixal_cycleways$type_original), ]
+Sintra_cycleways <- Sintra_cycleways[!is.na(Sintra_cycleways$type_original), ]
+
 
 # Standardize cycle_segregation -------------------------------------------
 Cascais_cycleways <- Cascais_cycleways |>
@@ -165,14 +185,20 @@ Seixal_cycleways <- Seixal_cycleways |>
   mutate(cycle_segregation = recode(type_original,
                                     "Misto com automóveis (rede viária)" = "Mixed traffic",
                                     "Faixa ciclável" = "Advisory lane", ### "Corredor ciclável" means uni-directional cycle lanes along a each side of a road, segregated either with paint or a curb.
-                                    "Pista Ciclável" = "Cycle track or lane", ### "Pista ciclável" means a cycle lane (either uni or bi-directional), somewhat segregated from traffic..
+                                    "Pista Ciclável" = "Cycle track or lane", ### "Pista ciclável" means a cycle lane (either uni or bi-directional), somewhat segregated from traffic.
                                     "Misto com peões" = "Protected Active"
+                                    )
+  )
+
+Sintra_cycleways <- Sintra_cycleways |>
+  mutate(cycle_segregation = recode(type_original,
+                                    "Pista Ciclável" = "Cycle track or lane",
                                     )
   )
 
 
 ## Join Municipalities -----------------------------------------------------
-aml_municipality_cycleways <- rbind(Cascais_cycleways, Lisboa_cycleways, Seixal_cycleways)
+aml_municipality_cycleways <- rbind(Cascais_cycleways, Lisboa_cycleways, Seixal_cycleways, Sintra_cycleways)
 aml_municipality_cycleways$length = st_length(aml_municipality_cycleways) |> units::drop_units() |> round()
 
 
