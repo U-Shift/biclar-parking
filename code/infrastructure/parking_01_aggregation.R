@@ -13,6 +13,27 @@ lisbon_parking_points <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/col
 nrow(lisbon_parking_points) # 2209
 summary(lisbon_parking_points)
 
+lisbon_parking_points_v2 <- subset(lisbon_parking_points, lisbon_parking_points$NUM_SUPORTES != 0) # Exclude all "parking" with no supports
+
+# If a parking point is a hotspot, its capacity is also including parked e-scooters (which do not need supports)
+# This way, bicycle parking capacity in hotspots is recalculated as two times the number of supports (assumed sheffield)
+lisbon_parking_points_v2$CAPACIDADE <- ifelse(
+  lisbon_parking_points_v2$TIPO_ESTACIONAMENTO == "HOTSPOT",
+  lisbon_parking_points_v2$NUM_SUPORTES * 2,
+  lisbon_parking_points_v2$CAPACIDADE
+  )
+lisbon_parking_points_v2 <- lisbon_parking_points_v2 |>
+  select(OBJECTID, MODELO, CAPACIDADE, COBERTO, geometry) |>
+  rename(
+    ID = OBJECTID,
+    structure_type = MODELO,
+    capacity = CAPACIDADE,
+    is_covered = COBERTO,
+  ) |>
+  mutate(is_covered = ifelse(is_covered == "Sim", TRUE, FALSE))
+lisbon_parking_points_v2$municipality <- "Lisboa"
+
+
 summary(lisbon_parking_points$CAPACIDADE)
 # Min. 1st Qu.  Median    Mean 3rd Qu.    Max.     NAs
 # 2.000   6.000   9.000   8.621  10.000  66.000      14
@@ -344,7 +365,7 @@ lacking_points <- function(base_source, check_source, distance_threshold) { #dis
   return(base_source[!removal_list, ])
 }
 
-osm_lacking_points <- lacking_points(remove_duplicates(mubi_parking_final, distance_threshold=25, capacity_column="capacity"), osm_parking_final, distance_threshold=25)
+osm_lacking_points <- lacking_points(lisbon_parking_points_v2, osm_parking_final, distance_threshold=25)
 mapview(osm_parking_final, col.regions="darkblue") + mapview(osm_lacking_points, col.regions="red")
 
 
