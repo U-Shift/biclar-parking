@@ -236,6 +236,6 @@ cycleway_overlap <- function (cycleways1, cycleways2, buffer_distance = 10){
 
 aml_municipality_cycleways$osm_overlap <- cycleway_overlap(aml_osm_cycleways, aml_municipality_cycleways)
 
-osm_lacking_cycleways <- subset(aml_municipality_cycleways, overlap_percentages <= 80)
+osm_lacking_cycleways <- subset(aml_municipality_cycleways, osm_overlap <= 80)
 
 mapview(osm_lacking_cycleways, color="red") + mapview(aml_osm_cycleways, color="darkblue")
