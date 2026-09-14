@@ -139,7 +139,7 @@ mapview(cycle_net_pt_clean, zcol = "cycle_segregation", layer.name = "OSM UPDATE
 # Write output to the mobility folder
 sf::st_write(
     cycle_net_pt_clean,
-    sprintf("data/raw/cycling_network/osm_%s.gpkg", format(Sys.Date(), "%Y%m%d")),
+    sprintf("data/raw/cycling_network/osm/osm_%s.gpkg", format(Sys.Date(), "%Y%m%d")),
     delete_dsn = TRUE
 )
 
