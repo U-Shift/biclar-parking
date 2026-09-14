@@ -377,7 +377,7 @@ add_to_osm <- osm_lacking_points |>
     covered == TRUE ~ "yes",
     covered == FALSE ~ "no"
   )) |>
-  mutate(bicycle_parking = dplyr::casewhen(
+  mutate(bicycle_parking = dplyr::case_when(
     bicycle_parking == "Barra" ~ "building", # only one point, inside a building
     bicycle_parking == "Borboleta" ~ "wall_loops",
     bicycle_parking == "Cascata" ~ "stands", # not sure if this fits here, but seems like the most appropriate tag
