@@ -2,6 +2,20 @@ library(dplyr)
 library(sf)
 library(mapview)
 
+
+# Municipalities with names ----------------------------------------------
+parishes <- read_sf("/data/biclar-parking/geo/CAOP_GLPS_LAND_UNIQUE_dtmnfr.gpkg")
+municipalities <- parishes |>
+  group_by(municipio) |>
+  summarize(
+    dtmn = first(substr(dtmnfr, 1, 4)),
+    nuts3_cod = first(nuts3_cod),
+    nuts3 = first(nuts2),
+    area_ha = sum(area_ha),
+    geom = st_union(geom)
+  ) |>
+  st_transform(3763)
+
 # TML PMUS Database -------------------------------------------------------
 
 ## Bike network (existant + planned) ------------------------------------------------------------
@@ -59,26 +73,15 @@ list_osm_cycleways = list.files(path = "/data/biclar-parking/raw/cycling_network
 aml_osm_cycleways <- st_read(dplyr::last(list_osm_cycleways)) |> st_transform(3763)
 nrow(aml_osm_cycleways)
 summary(aml_osm_cycleways)
+aml_osm_cycleways <- st_join(aml_osm_cycleways, municipalities["municipio"], join=st_within)
+aml_osm_cycleways <- aml_osm_cycleways |> rename(municipality = municipio)
 #mapview(aml_osm_cycleways)
 
 #osm_protected_cyclelanes <- aml_osm_cycleways[aml_osm_cycleways$cycle_segregation != "Advisory lane",]
 #mapview(osm_protected_cyclelanes)
 
 
-# Municipality Data -------------------------------------------------------
-parishes <- read_sf("/data/biclar-parking/geo/CAOP_GLPS_LAND_UNIQUE_dtmnfr.gpkg")
-
-## Aggregate by municipality -----------------------------------------------
-municipalities <- parishes |>
-  group_by(municipio) |>
-  summarize(
-    dtmn = first(substr(dtmnfr, 1, 4)),
-    nuts3_cod = first(nuts3_cod),
-    nuts3 = first(nuts2),
-    area_ha = sum(area_ha),
-    geom = st_union(geom)
-  )
-
+# Updated Municipality Cycleway Data -------------------------------------------------------
 ## Get cycleway data for every available municipality ----------------------
 list_mun_cycleways = list.files(path = "/data/biclar-parking/raw/cycling_network/municipalities", full.names=TRUE)
 
@@ -101,12 +104,12 @@ Lisboa_cycleways <- st_read(list_mun_cycleways[2]) |> mutate(municipality = gsub
 # Moita_cycleways
 # Montijo_cycleways
 # Odivelas_cycleways
-# Oeiras_cycleways
+Oeiras_cycleways <- st_read(list_mun_cycleways[3]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities/|\\..*$", "", list_mun_cycleways[3]))
 # Palmela_cycleways
-Seixal_cycleways <- st_read(list_mun_cycleways[3]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities/|\\..*$", "", list_mun_cycleways[3]))
+Seixal_cycleways <- st_read(list_mun_cycleways[4]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities/|\\..*$", "", list_mun_cycleways[4]))
 # Sesimbra_cycleways
 # Setúbal_cycleways
-Sintra_cycleways <- st_read(list_mun_cycleways[4]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities/|\\..*$", "", list_mun_cycleways[4]))
+Sintra_cycleways <- st_read(list_mun_cycleways[5]) |> mutate(municipality = gsub("/data/biclar-parking/raw/cycling_network/municipalities/|\\..*$", "", list_mun_cycleways[5]))
 # VFX_cycleways
 
 
@@ -114,22 +117,26 @@ Sintra_cycleways <- st_read(list_mun_cycleways[4]) |> mutate(municipality = gsub
 ### CRS (Standardize as 3763) --------------------------------------------
 Cascais_cycleways <- Cascais_cycleways |> st_transform(3763)
 Lisboa_cycleways <- Lisboa_cycleways |> st_transform(3763)
+Oeiras_cycleways <- Oeiras_cycleways |> st_transform(3763)
 Seixal_cycleways <- Seixal_cycleways |> st_transform(3763)
 Sintra_cycleways <- Sintra_cycleways |> st_transform(3763)
 
 ### Remove empty geometries --------------------------------------------
 Cascais_cycleways <- Cascais_cycleways[!st_is_empty(Cascais_cycleways), ]
 Lisboa_cycleways <- Lisboa_cycleways[!st_is_empty(Lisboa_cycleways), ]
+Oeiras_cycleways <- Oeiras_cycleways[!st_is_empty(Oeiras_cycleways), ]
 Seixal_cycleways <- Seixal_cycleways[!st_is_empty(Seixal_cycleways), ]
 Sintra_cycleways <- Sintra_cycleways[!st_is_empty(Sintra_cycleways), ]
 
 ### Remove Z/M geometry parameter --------------------------------------------
 Cascais_cycleways <- st_zm(Cascais_cycleways)
 Lisboa_cycleways <- st_zm(Lisboa_cycleways)
+Oeiras_cycleways <- st_zm(Oeiras_cycleways)
 Seixal_cycleways <- st_zm(Seixal_cycleways)
 Sintra_cycleways <- st_zm(Sintra_cycleways)
 
 ### Only existing network ---------------------------------------------------------------
+Oeiras_cycleways <- subset(Oeiras_cycleways, Oeiras_cycleways$Fase=="Existente") # Only existing cycleways
 Seixal_cycleways <- Seixal_cycleways[!is.na(Seixal_cycleways$Data_Inau), ] # Inauguration date has to exist
 
 
@@ -143,6 +150,10 @@ Lisboa_cycleways <- Lisboa_cycleways |>
   select(DESIGNACAO, TIPOLOGIA, SHAPE, municipality) |>
   rename(name = DESIGNACAO, type_original = TIPOLOGIA, geometry = SHAPE)
 
+Oeiras_cycleways <- Oeiras_cycleways |> # Oeiras has no type_original...
+  select(Designação, Fase, geometry, municipality) |>
+  rename(name = Designação, type_original = Fase)
+
 Seixal_cycleways <- Seixal_cycleways |>
   select(SEGMENTO_I, TIPOLOGIA, geom, municipality) |>
   rename(name = SEGMENTO_I, type_original = TIPOLOGIA, geometry = geom)
@@ -155,6 +166,7 @@ Sintra_cycleways <- Sintra_cycleways |>
 ### Remove rows with N/A type_original (there were some cycleways whose geometry made no sense and didn't correspond to reality) ----------------
 Cascais_cycleways <- Cascais_cycleways[!is.na(Cascais_cycleways$type_original), ]
 Lisboa_cycleways <- Lisboa_cycleways[!is.na(Lisboa_cycleways$type_original), ]
+Oeiras_cycleways <- Oeiras_cycleways[!is.na(Oeiras_cycleways$type_original), ]
 Seixal_cycleways <- Seixal_cycleways[!is.na(Seixal_cycleways$type_original), ]
 Sintra_cycleways <- Sintra_cycleways[!is.na(Sintra_cycleways$type_original), ]
 
@@ -182,6 +194,12 @@ Lisboa_cycleways <- Lisboa_cycleways |>
                                     )
   )
 
+Oeiras_cycleways <- Oeiras_cycleways |>
+  mutate(cycle_segregation = recode(type_original,
+                                    "Existente" = "Cycle track or lane",
+                                    )
+  )
+
 Seixal_cycleways <- Seixal_cycleways |>
   mutate(cycle_segregation = recode(type_original,
                                     "Misto com automóveis (rede viária)" = "Mixed traffic",
@@ -199,7 +217,7 @@ Sintra_cycleways <- Sintra_cycleways |>
 
 
 ## Join Municipalities -----------------------------------------------------
-aml_municipality_cycleways <- rbind(Cascais_cycleways, Lisboa_cycleways, Seixal_cycleways, Sintra_cycleways)
+aml_municipality_cycleways <- rbind(Cascais_cycleways, Lisboa_cycleways, Oeiras_cycleways, Seixal_cycleways, Sintra_cycleways)
 aml_municipality_cycleways$length = st_length(aml_municipality_cycleways) |> units::drop_units() |> round()
 
 
@@ -234,8 +252,13 @@ cycleway_overlap <- function (cycleways1, cycleways2, buffer_distance = 10){
   return(overlap_percentages)
 }
 
+# Cycleways in Municipalities but not in OSM
 aml_municipality_cycleways$osm_overlap <- cycleway_overlap(aml_osm_cycleways, aml_municipality_cycleways)
-
 osm_lacking_cycleways <- subset(aml_municipality_cycleways, osm_overlap <= 80)
-
 mapview(osm_lacking_cycleways, color="red") + mapview(aml_osm_cycleways, color="darkblue")
+
+# Cycleways in Biclar but not in OSM
+aml_mun_cycleways_2022 <- st_read("/data/biclar-parking/raw/cycling_network/RedeExistente2022/RedeExistente.gpkg") |> st_transform(3763)
+aml_mun_cycleways_2022$osm_overlap <- cycleway_overlap(aml_osm_cycleways, aml_mun_cycleways_2022)
+osm_biclar_lacking_cycleways <- subset(aml_mun_cycleways_2022, osm_overlap <= 80)
+mapview(osm_biclar_lacking_cycleways, color="red") + mapview(aml_osm_cycleways, color="darkblue")
