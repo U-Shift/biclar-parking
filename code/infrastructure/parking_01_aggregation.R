@@ -370,6 +370,33 @@ mapview(osm_parking_final, col.regions="darkblue") + mapview(osm_lacking_points,
 
 
 
+### Make data proper to put into OSM -----------------------------------
+add_to_osm <- osm_lacking_points |>
+  rename(bicycle_parking = structure_type, covered = is_covered) |>
+  mutate(covered = dplyr::case_when(
+    covered == TRUE ~ "yes",
+    covered == FALSE ~ "no"
+  )) |>
+  mutate(bicycle_parking = dplyr::casewhen(
+    bicycle_parking == "Barra" ~ "building", # only one point, inside a building
+    bicycle_parking == "Borboleta" ~ "wall_loops",
+    bicycle_parking == "Cascata" ~ "stands", # not sure if this fits here, but seems like the most appropriate tag
+    bicycle_parking == "Entorta rodas" ~ "wall_loops",
+    bicycle_parking == "Entorta rodas com encosto" ~ "wall_loops",
+    bicycle_parking == "Grelha" ~ "wall_loops",
+    bicycle_parking == "Onda" ~ "wave",
+    bicycle_parking == "Lisboa" ~ NA,
+    bicycle_parking == "Sheffield estilizado" ~ "stands",
+    bicycle_parking == "Sheffield estreito" ~ "stands",
+    bicycle_parking == "Sheffield largo" ~ "stands",
+    bicycle_parking == "Sheffield standard" ~ "stands",
+    bicycle_parking == "Vertical" ~ "building", # only one point, inside a building
+    bicycle_parking == NA ~ NA,
+  ))
+add_to_osm$ID <- NULL
+add_to_osm$municipality <- NULL
+
+
 
 ## Reviews of existing infrastructure  ---------------------------------------------------
 # To be analysed, stored at /data/biclar-parking/raw/mubi_cidadeciclavel/reviews.json
