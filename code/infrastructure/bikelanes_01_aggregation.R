@@ -193,7 +193,7 @@ Seixal_cycleways <- Seixal_cycleways |>
 
 Sintra_cycleways <- Sintra_cycleways |>
   mutate(cycle_segregation = recode(type_original,
-                                    "Pista Ciclável" = "Cycle track or lane",
+                                    "Pista ciclável" = "Cycle track or lane", # Sintra does not distinguish their cycle tracks. "Pista ciclável" only means a corridor intended for cyclists (even if there are parts shared with cars or with no signage)
                                     )
   )
 
