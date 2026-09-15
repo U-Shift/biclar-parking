@@ -227,7 +227,7 @@ aml_biclar_cycleways <- aml_biclar_cycleways |>
   mutate(cycle_segregation = recode(type_original,
                                     "Não-dedicada" = "Advisory lane",
                                     "Dedicada" = "Cycle track or lane"
-                                    )
+                                    ) # NOTE: The original classification is too broad, "Dedicada" also includes cycleways shared with pedestrians
   )
 
 
