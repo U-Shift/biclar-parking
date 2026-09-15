@@ -409,7 +409,7 @@ add_to_osm$municipality <- NULL
 add_to_osm$source <- "EMEL"
 add_to_osm$"source:url" <- "https://geoportal.tmlmobilidade.pt/ogc-api/collections/modos_partilhados_pontos_partilha_aml"
 
-write_sf(add_to_osm, "/data/biclar-parking/raw/parking_osm/parkind_add_to_osm.gpkg")
+write_sf(add_to_osm, "/data/biclar-parking/raw/parking_osm/parking_add_to_osm.geojson")
 
 ## Reviews of existing infrastructure  ---------------------------------------------------
 # To be analysed, stored at /data/biclar-parking/raw/mubi_cidadeciclavel/reviews.json
