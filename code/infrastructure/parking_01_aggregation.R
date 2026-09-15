@@ -12,33 +12,34 @@ lisbon_parking_points <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/col
   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/cml_ciclovia_estacionamento/items?f=json&limit=1000&offset=2000"))
 nrow(lisbon_parking_points) # 2209
 summary(lisbon_parking_points)
+summary(lisbon_parking_points$CAPACIDADE)
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max.     NAs
+# 2.000   6.000   9.000   8.621  10.000  66.000      14
+#mapview(st_zm(lisbon_parking_points), zcol="CAPACIDADE")
+
 
 lisbon_parking_points_v2 <- subset(lisbon_parking_points, lisbon_parking_points$NUM_SUPORTES != 0) # Exclude all "parking" with no supports
 
-# If a parking point is a hotspot, its capacity is also including parked e-scooters (which do not need supports)
-# This way, bicycle parking capacity in hotspots is recalculated as two times the number of supports (assumed sheffield)
+# If a parking point is a hotspot, its capacity also includes parked e-scooters (which do not need supports)
+# This way, bicycle parking capacity in hotspots is recalculated as 2x the number of supports (assumed sheffield)
 lisbon_parking_points_v2$CAPACIDADE <- ifelse(
   lisbon_parking_points_v2$TIPO_ESTACIONAMENTO == "HOTSPOT",
   lisbon_parking_points_v2$NUM_SUPORTES * 2,
   lisbon_parking_points_v2$CAPACIDADE
   )
 lisbon_parking_points_v2 <- lisbon_parking_points_v2 |>
-  select(OBJECTID, MODELO, CAPACIDADE, COBERTO, geometry) |>
+  select(OBJECTID, MODELO, CAPACIDADE, COBERTO, DOMINIALIDADE, EQUIPAMENTO_SERVIDO, geometry) |>
   rename(
     ID = OBJECTID,
     structure_type = MODELO,
     capacity = CAPACIDADE,
     is_covered = COBERTO,
+    access = DOMINIALIDADE,
+    description = EQUIPAMENTO_SERVIDO
   ) |>
   mutate(is_covered = ifelse(is_covered == "Sim", TRUE, FALSE))
 lisbon_parking_points_v2$municipality <- "Lisboa"
 
-
-summary(lisbon_parking_points$CAPACIDADE)
-# Min. 1st Qu.  Median    Mean 3rd Qu.    Max.     NAs
-# 2.000   6.000   9.000   8.621  10.000  66.000      14
-
-mapview(st_zm(lisbon_parking_points), zcol="CAPACIDADE")
 
 ## Shared mobility parking spaces -------------------------------------------------------
 # aml_shared_mobility_open <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/modos_partilhados_pontos_partilha_aml/items?f=json&limit=1000") |>
@@ -149,7 +150,7 @@ table(aml_bike_parking_interfaces$Município)
 # 4                  13                  21                  10                   2
 
 
-# OSM ---------------------------------------------------------------------
+# Fetch data from OSM ---------------------------------------------------------------------
 
 # https://wiki.openstreetmap.org/wiki/Tag:amenity%3Dbicycle_parking
 
@@ -172,6 +173,37 @@ osm_parking_pygons <- osm_parking$osm_polygons |> mutate(capacity = as.integer(c
 summary(osm_parking_pygons)
 nrow(osm_parking_pygons)
 mapview(osm_parking_points, zcol="capacity") + mapview(osm_parking_pygons, zcol="capacity")
+
+sf::st_write(
+  osm_parking_final,
+  sprintf("data/raw/parking_osm/osm_%s.gpkg", format(Sys.Date(), "%Y%m%d")),
+  delete_dsn = TRUE
+)
+
+# Consolidation of OSM data ---------------------------------------
+osm_parking_centroids <- st_centroid(osm_parking_pygons)
+osm_parking_beta <- bind_rows(osm_parking_points, osm_parking_centroids)
+osm_parking_beta <- osm_parking_beta[!is.na(osm_parking_beta$amenity),] # removing vertices from polygon objects (which were in "osm_parking_points" without any data)
+osm_parking_beta <- osm_parking_beta |> select(osm_id, bicycle_parking, capacity, covered, geometry)
+
+
+#osm_parking_beta_filter <- osm_parking_beta |> filter(!is.na(capacity))
+#mapview(osm_parking_beta, zcol="capacity")
+#mapview(osm_parking_beta_filter, zcol="capacity")
+
+# Add municípios
+osm_parking_final <- st_join(osm_parking_beta, aml, join = st_within)
+
+# Standardizing column names
+osm_parking_final <- osm_parking_final |> rename(
+  ID = osm_id,
+  municipality = Concelho,
+  structure_type = bicycle_parking,
+  is_covered = covered
+)
+osm_parking_final <- osm_parking_final |> mutate(ID = as.integer(ID)) #id as integer and not string
+osm_parking_final <- osm_parking_final |> mutate(is_covered = ifelse(is_covered == "yes", TRUE, FALSE)) #is_covered as boolean and not string
+mapview(osm_parking_final, zcol="capacity")
 
 
 # MUBI: Cidade Ciclável ---------------------------------------------------
@@ -240,37 +272,11 @@ summary(mubi_parking_requests$support)
 # 0.000   1.000   2.000   2.368   3.000  35.000
 
 
-# Aggregation of OSM and MUBi data ---------------------------------------
-
-## Consolidation of OSM data (turning polygons into points)
-osm_parking_centroids <- st_centroid(osm_parking_pygons)
-osm_parking_beta <- bind_rows(osm_parking_points, osm_parking_centroids)
-osm_parking_beta <- osm_parking_beta[!is.na(osm_parking_beta$amenity),] # removing vertices from polygon objects (which were in "osm_parking_points" without any data)
-osm_parking_beta <- osm_parking_beta |> select(osm_id, bicycle_parking, capacity, covered, geometry)
-
-
-#osm_parking_beta_filter <- osm_parking_beta |> filter(!is.na(capacity))
-#mapview(osm_parking_beta, zcol="capacity")
-#mapview(osm_parking_beta_filter, zcol="capacity")
 
 # Fields for aggregating OSM and MUBi data
 # OSM -> osm_id, bicycle_parking (tipo de estrutura), capacity, covered, geometry; adicionar municipio
 # MUBi -> id, structureType, isCovered, slots, Concelho, geometry
 # Final -> data_source, ID, structure_type, capacity, is_covered, municipality, geometry
-
-# Add municípios
-osm_parking_final <- st_join(osm_parking_beta, aml, join = st_within)
-
-# Standardizing column names
-osm_parking_final <- osm_parking_final |> rename(
-  ID = osm_id,
-  municipality = Concelho,
-  structure_type = bicycle_parking,
-  is_covered = covered
-)
-osm_parking_final <- osm_parking_final |> mutate(ID = as.integer(ID)) #id as integer and not string
-osm_parking_final <- osm_parking_final |> mutate(is_covered = ifelse(is_covered == "yes", TRUE, FALSE)) #is_covered as boolean and not string
-mapview(osm_parking_final, zcol="capacity")
 
 mubi_parking_final <- mubi_parking_points |> select(id, structureType, isCovered, slots, geometry, Concelho)
 mubi_parking_final <- mubi_parking_final |> rename(
@@ -340,8 +346,9 @@ mapview(total_parking_final, zcol="capacity")
 #         75m                         1869                          43
 #         100m                        1639
 
-#write_sf(osm_parking_final, "/data/biclar-parking/base/existing_parking/aml_osm_parking.gpkg")
+
 #write_sf(mubi_parking_final, "/data/biclar-parking/base/existing_parking/aml_mubi_parking.gpkg")
+#write_sf(lisbon_parking_points_v2, "/data/biclar-parking/base/existing_parking/lisbon_emel_parking.gpkg")
 write_sf(total_parking_final, "/data/biclar-parking/base/existing_parking/aml_total_parking.gpkg")
 
 
@@ -365,7 +372,7 @@ lacking_points <- function(base_source, check_source, distance_threshold) { #dis
   return(base_source[!removal_list, ])
 }
 
-osm_lacking_points <- lacking_points(lisbon_parking_points_v2, osm_parking_final, distance_threshold=25)
+osm_lacking_points <- lacking_points(lisbon_parking_points_v2, osm_parking_final, distance_threshold=25) #Only Lisbon
 mapview(osm_parking_final, col.regions="darkblue") + mapview(osm_lacking_points, col.regions="red")
 
 
@@ -376,6 +383,10 @@ add_to_osm <- osm_lacking_points |>
   mutate(covered = dplyr::case_when(
     covered == TRUE ~ "yes",
     covered == FALSE ~ "no"
+  )) |>
+  mutate(access = dplyr::case_when(
+    access == "Público" ~ "yes",
+    access == "Privado" ~ "private"
   )) |>
   mutate(bicycle_parking = dplyr::case_when(
     bicycle_parking == "Barra" ~ "building", # only one point, inside a building
@@ -395,8 +406,10 @@ add_to_osm <- osm_lacking_points |>
   ))
 add_to_osm$ID <- NULL
 add_to_osm$municipality <- NULL
+add_to_osm$source <- "EMEL"
+add_to_osm$"source:url" <- "https://geoportal.tmlmobilidade.pt/ogc-api/collections/modos_partilhados_pontos_partilha_aml"
 
-
+write_sf(add_to_osm, "/data/biclar-parking/raw/parking_osm/parkind_add_to_osm.gpkg")
 
 ## Reviews of existing infrastructure  ---------------------------------------------------
 # To be analysed, stored at /data/biclar-parking/raw/mubi_cidadeciclavel/reviews.json
