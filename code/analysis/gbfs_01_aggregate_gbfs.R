@@ -9,33 +9,77 @@ source("code/analysis/gbfs_00_params.R")
 load_bikes <- function(
   base_folder, subfolder,
   date_start, date_end,
-  parse_file_fn = read.csv
+  parse_file_fn = arrow::read_parquet
 ) {
-  day_folders <- list.dirs(paste0(base_folder, "/collection/", subfolder), recursive = FALSE)
-  # Pre-allocate list
-  all_days <- vector("list", length(day_folders))
+  status_dir <- file.path(base_folder, "collection", subfolder)
 
-  for (i in seq_along(day_folders)) {
-    f <- day_folders[[i]]
-    day <- as.integer(basename(f))
-    files <- list.files(f, pattern = "\\.csv$", full.names = TRUE)
+  if (!dir.exists(status_dir)) {
+    warning(sprintf("Directory '%s' does not exist.", status_dir))
+    return(tibble::tibble(
+      lat = numeric(),
+      lon = numeric(),
+      vehicle_type = integer(),
+      datetime = as.POSIXct(character()),
+      timestamp = character(),
+      day = character(),
+      day_type = character(),
+      hour = integer()
+    ))
+  }
 
-    if (day < date_start | day > date_end) {
-      message(sprintf("Skipping day %s (%d files)", day, length(files)))
-      next
-    }
-    day_date <- as.Date(as.character(day), format = "%Y%m%d")
+  parquet_files <- list.files(status_dir, pattern = "^\\d{8}\\.parquet$", full.names = TRUE)
+  today_str <- format(Sys.Date(), "%Y%m%d")
+
+  day_strs <- sub("\\.parquet$", "", basename(parquet_files))
+  day_nums <- as.integer(day_strs)
+
+  # Eligible past-date parquet files strictly before today (< today_str, ignoring current day CSV)
+  valid_idx <- grepl("^\\d{8}$", day_strs) & (day_strs < today_str)
+  in_range_idx <- valid_idx & (day_nums >= as.integer(date_start)) & (day_nums <= as.integer(date_end))
+
+  skipped_files <- parquet_files[valid_idx & !in_range_idx]
+  for (sf in skipped_files) {
+    message(sprintf("Skipping day %s (outside date range)", sub("\\.parquet$", "", basename(sf))))
+  }
+
+  target_files <- parquet_files[in_range_idx]
+
+  if (length(target_files) == 0) {
+    message(sprintf("No eligible past-date parquet files found in '%s' for date range %s to %s.",
+                    status_dir, date_start, date_end))
+    return(tibble::tibble(
+      lat = numeric(),
+      lon = numeric(),
+      vehicle_type = integer(),
+      datetime = as.POSIXct(character()),
+      timestamp = character(),
+      day = character(),
+      day_type = character(),
+      hour = integer()
+    ))
+  }
+
+  all_days <- vector("list", length(target_files))
+
+  for (i in seq_along(target_files)) {
+    f <- target_files[[i]]
+    day_str <- sub("\\.parquet$", "", basename(f))
+    day_date <- as.Date(day_str, format = "%Y%m%d")
     day_type_val <- if (lubridate::wday(day_date) %in% c(1, 7)) "weekend" else "week"
 
-    all_days[[i]] <- dplyr::bind_rows(lapply(files, function(file) {
-      ts_str <- tools::file_path_sans_ext(basename(file))
-      df <- parse_file_fn(file)
-      df$timestamp <- ts_str
-      df$day <- basename(dirname(file))
-      df$day_type <- day_type_val
-      df$hour <- as.integer(substr(ts_str, 1, 2))
-      df
-    }))
+    message(sprintf("Processing day %s (%s)", day_str, basename(f)))
+    df <- parse_file_fn(f)
+
+    df$day <- day_str
+    df$day_type <- day_type_val
+    if (!"hour" %in% names(df) && "datetime" %in% names(df)) {
+      df$hour <- lubridate::hour(df$datetime)
+    }
+    if (!"timestamp" %in% names(df) && "datetime" %in% names(df)) {
+      df$timestamp <- format(df$datetime, "%H%M%S")
+    }
+
+    all_days[[i]] <- df
   }
 
   result <- dplyr::bind_rows(all_days)
@@ -139,23 +183,31 @@ aggregate_bikes_at_grid <- function(bikes, types = NULL) {
 
 ## GBFS --------------------------------------------------------------------------
 for (r in REGIONS_GBFS) { # r = REGIONS_GBFS[[1]]
-  message("\nProcessing Bird data for ", r)
+  message("\nProcessing GBFS data for ", r)
   output_folder <- paste0("data/analysis/gbfs/", r)
   if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
 
   # Load metadata for region
-  folder <- paste0("data/collection/gbfs/", r)
+  folder <- file.path(BASE_FOLDER, r)
 
   # Load vehicle types
-  vehicle_types <- read.csv(paste0(folder, "/vehicle_types.csv"))
+  vehicle_types <- read.csv(file.path(folder, "vehicle_types.csv"))
 
   # Load data collection
-  bikes_collection <- load_bikes(
+  bikes_raw <- load_bikes(
     base_folder   = folder,
     subfolder     = "free_bike_status",
     date_start    = DATE_START,
     date_end      = DATE_END
-  ) |> st_as_sf(coords = c("lon", "lat"), crs = 4326)
+  )
+
+  if (nrow(bikes_raw) == 0) {
+    message(sprintf("No bike collection data to aggregate for %s.", r))
+    next
+  }
+
+  bikes_collection <- bikes_raw |> st_as_sf(coords = c("lon", "lat"), crs = 4326)
+  rm(bikes_raw)
 
   # Aggregate and write per-period metrics
   compute_period_metrics(bikes_collection, vehicle_types, output_folder, PERIODS)
