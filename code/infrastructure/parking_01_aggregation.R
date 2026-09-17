@@ -204,7 +204,7 @@ osm_parking_final <- osm_parking_final |> rename(
 osm_parking_final <- osm_parking_final |> mutate(ID = as.integer(ID)) #id as integer and not string
 osm_parking_final <- osm_parking_final |> mutate(is_covered = ifelse(is_covered == "yes", TRUE, FALSE)) #is_covered as boolean and not string
 mapview(osm_parking_final, zcol="capacity")
-
+mapview(osm_parking_final, col.regions="darkblue")
 
 # MUBI: Cidade Ciclável ---------------------------------------------------
 # https://cidadeciclavel.mubi.pt/
@@ -273,7 +273,8 @@ summary(mubi_parking_requests$support)
 
 
 
-# Fields for aggregating OSM and MUBi data
+
+# Aggregation of OSM and MUBi data (not necessary) ------------------------------
 # OSM -> osm_id, bicycle_parking (tipo de estrutura), capacity, covered, geometry; adicionar municipio
 # MUBi -> id, structureType, isCovered, slots, Concelho, geometry
 # Final -> data_source, ID, structure_type, capacity, is_covered, municipality, geometry
@@ -373,11 +374,11 @@ lacking_points <- function(base_source, check_source, distance_threshold) { #dis
 }
 
 osm_lacking_points <- lacking_points(lisbon_parking_points_v2, osm_parking_final, distance_threshold=25) #Only Lisbon
-mapview(osm_parking_final, col.regions="darkblue") + mapview(osm_lacking_points, col.regions="red")
+#mapview(osm_parking_final, col.regions="darkblue") + mapview(osm_lacking_points, col.regions="red")
 
 
 
-### Make data proper to put into OSM -----------------------------------
+### Make EMEL data proper to put into OSM (only necessary again if the EMEL database is updated) -----------------------------------
 add_to_osm <- osm_lacking_points |>
   rename(bicycle_parking = structure_type, covered = is_covered) |>
   mutate(covered = dplyr::case_when(
@@ -409,7 +410,7 @@ add_to_osm$municipality <- NULL
 add_to_osm$source <- "EMEL"
 add_to_osm$"source:url" <- "https://geoportal.tmlmobilidade.pt/ogc-api/collections/modos_partilhados_pontos_partilha_aml"
 
-write_sf(add_to_osm, "/data/biclar-parking/raw/parking_osm/parking_add_to_osm.geojson")
+# write_sf(add_to_osm, "/data/biclar-parking/raw/parking_osm/parking_add_to_osm.geojson")
 
 ## Reviews of existing infrastructure  ---------------------------------------------------
 # To be analysed, stored at /data/biclar-parking/raw/mubi_cidadeciclavel/reviews.json
