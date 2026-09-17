@@ -13,12 +13,12 @@ The main pipeline in `03_dasymetric_combined.R` supports three configurable mode
      3. *BGRI Area (Priority 3 — last resort)*: Where neither is present, weights fall back to raw overlapping census block area to ensure no population is lost.
 
 2. **`"cos_only"` (Night Model):**
-   - **Methodology**: Uses strictly residential COS land-use class weights ($3.0\times, 1.0\times, 0.6\times, 0.3\times$) with bare BGRI area fallback.
-   - **Purpose**: Fast residential home-base / night model without remote building atlas dependencies.
+   - **Methodology**: Uses strictly residential COS land-use class weights ($3.0\times, 1.0\times, 0.6\times, 0.3\times$). No fallback to bare area.
+   - **Purpose**: Fast residential home-base / night model based purely on land-use classification.
 
 3. **`"all_buildings"` (Dynamics Model):**
-   - **Methodology**: Uses total building volume (`volume_m3`) across all buildings without clipping to residential COS, with bare BGRI area fallback.
-   - **Purpose**: Captures total physical built mass and urban activity dynamics across residential, commercial, industrial, and mixed-use structures.
+   - **Methodology**: Uses total building volume (`volume_m3`) across all buildings without clipping to residential COS. No fallback to bare area.
+   - **Purpose**: Captures total physical built mass and urban activity dynamics across all built structures.
 
 
 ## Pipeline Scripts
@@ -37,6 +37,12 @@ To run the pipeline:
 ```r
 # From the repository root:
 source("code/daysimetric-map/03_dasymetric_combined.R")
+```
+
+OR 
+
+```bash 
+$ Rscript code/daysimetric-map/03_dasymetric_combined.R
 ```
 
 ### Configuration & Options (at top of `03_dasymetric_combined.R`)

@@ -3,8 +3,8 @@
 #
 # Modes:
 #   - "combined":      Building volume inside residential COS -> COS area fallback -> BGRI area fallback (default)
-#   - "cos_only":      Residential COS land-use area weights -> BGRI area fallback (Night model)
-#   - "all_buildings":  Total building volume across all buildings -> BGRI area fallback (Dynamics model)
+#   - "cos_only":      Residential COS land-use area weights only (no fallback)
+#   - "all_buildings":  Total building volume across all buildings only (no fallback)
 #
 # Procedure:
 #   1. Setup & Load: Read H3 r9 grid, municipalities, BGRI 2021 census, and conditionally
@@ -13,8 +13,8 @@
 #      - If "combined": Clip buildings to residential COS mask, compute fragment volume.
 #      - If "all_buildings": Compute fragment volume across all buildings (no COS clip).
 #      - If "cos_only": Compute weighted COS area.
-#      - Bare BGRI area: Intersect grid x BGRI for raw area fallback (all modes).
-#   3. Hierarchical Fallback: Combine weights according to active DASYMETRIC_MODE.
+#      - Bare BGRI area: Intersect grid x BGRI for raw area fallback (only in "combined" mode).
+#   3. Weight Assignment: Combine or assign weights according to active DASYMETRIC_MODE.
 #   4. Disaggregation: Prorate BGRI census counts across H3 cells.
 #   5. Grid Join & Export: Aggregate to H3 cells, calculate demographic indicators,
 #      validate against BGRI census totals, and export GPKG and CSV.
@@ -489,35 +489,39 @@ if (DASYMETRIC_MODE %in% c("combined", "cos_only")) {
 }
 
 
-# 9. Bare BGRI area fallback -------------------------------------------------
+# 9. Bare BGRI area fallback (combined mode only) ----------------------------
 
-message("[fallback] Computing bare BGRI-area fallback fragments...")
-ckpt_bgri <- sprintf("%s/bgri_area_frags%s.Rds", CHECKPOINT_DIR, run_suffix)
-bgri_area_frags <- read_checkpoint(ckpt_bgri)
-if (is.null(bgri_area_frags)) {
-  t0 <- Sys.time()
-  bgri_area_frags_sf <- st_intersection(grid_active, census_simple)
-  bgri_area_frags_sf$bare_area <- as.numeric(st_area(bgri_area_frags_sf))
-  bgri_area_frags <- bgri_area_frags_sf |>
-    st_drop_geometry() |>
-    select(id, BGRI2021, bare_area) |>
-    filter(bare_area > 0)
-  write_checkpoint(bgri_area_frags, ckpt_bgri)
-  message(sprintf(
-    "[fallback] Bare-area pairs: %d — %.1f min",
-    nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
-  ))
-  rm(bgri_area_frags_sf)
+if (DASYMETRIC_MODE == "combined") {
+  message("[fallback] Computing bare BGRI-area fallback fragments...")
+  ckpt_bgri <- sprintf("%s/bgri_area_frags%s.Rds", CHECKPOINT_DIR, run_suffix)
+  bgri_area_frags <- read_checkpoint(ckpt_bgri)
+  if (is.null(bgri_area_frags)) {
+    t0 <- Sys.time()
+    bgri_area_frags_sf <- st_intersection(grid_active, census_simple)
+    bgri_area_frags_sf$bare_area <- as.numeric(st_area(bgri_area_frags_sf))
+    bgri_area_frags <- bgri_area_frags_sf |>
+      st_drop_geometry() |>
+      select(id, BGRI2021, bare_area) |>
+      filter(bare_area > 0)
+    write_checkpoint(bgri_area_frags, ckpt_bgri)
+    message(sprintf(
+      "[fallback] Bare-area pairs: %d — %.1f min",
+      nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
+    ))
+    rm(bgri_area_frags_sf)
+  } else {
+    message(sprintf("[fallback] Checkpoint found: %d bare-area pairs", nrow(bgri_area_frags)))
+  }
 } else {
-  message(sprintf("[fallback] Checkpoint found: %d bare-area pairs", nrow(bgri_area_frags)))
+  bgri_area_frags <- NULL
 }
 rm(grid_active)
 gc()
 
 
-# 10. Combine weights with hierarchical fallback ----------------------------
+# 10. Combine / prepare weights ---------------------------------------------
 
-message(sprintf("[combine] Applying hierarchical fallback (mode: %s)...", DASYMETRIC_MODE))
+message(sprintf("[weights] Preparing weights (mode: %s)...", DASYMETRIC_MODE))
 
 if (DASYMETRIC_MODE == "combined") {
   all_pairs <- bgri_area_frags |>
@@ -536,18 +540,18 @@ if (DASYMETRIC_MODE == "combined") {
       )
     )
 } else if (DASYMETRIC_MODE == "cos_only") {
-  all_pairs <- bgri_area_frags |>
-    left_join(cos_bgri_frags, by = c("id", "BGRI2021")) |>
+  # COS-only mode: strictly residential COS weights without fallback
+  all_pairs <- cos_bgri_frags |>
     mutate(
-      weight_source = if_else(!is.na(cos_weight_sum) & cos_weight_sum > 0, "cos_area", "bare_area"),
-      weight        = if_else(weight_source == "cos_area", cos_weight_sum, bare_area)
+      weight_source = "cos_area",
+      weight        = cos_weight_sum
     )
 } else if (DASYMETRIC_MODE == "all_buildings") {
-  all_pairs <- bgri_area_frags |>
-    left_join(vol_weights, by = c("id", "BGRI2021")) |>
+  # All-buildings mode: strictly building volume without fallback
+  all_pairs <- vol_weights |>
     mutate(
-      weight_source = if_else(!is.na(vol_weight) & vol_weight > 0, "building_volume", "bare_area"),
-      weight        = if_else(weight_source == "building_volume", vol_weight, bare_area)
+      weight_source = "building_volume",
+      weight        = vol_weight
     )
 }
 
@@ -557,10 +561,12 @@ weight_summary <- all_pairs |>
   group_by(weight_source) |>
   summarise(n_pairs = n(), .groups = "drop") |>
   mutate(pct = round(n_pairs / sum(n_pairs) * 100, 1))
-message("[combine] Weight source breakdown:")
+message("[weights] Weight source breakdown:")
 print(as.data.frame(weight_summary))
 
-rm(vol_weights, cos_bgri_frags, bgri_area_frags)
+if (!is.null(vol_weights)) rm(vol_weights)
+if (!is.null(cos_bgri_frags)) rm(cos_bgri_frags)
+if (!is.null(bgri_area_frags)) rm(bgri_area_frags)
 gc()
 
 
