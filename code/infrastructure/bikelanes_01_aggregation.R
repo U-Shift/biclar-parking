@@ -240,7 +240,7 @@ aml_municipality_cycleways$length = st_length(aml_municipality_cycleways) |> uni
 # write_sf(aml_municipality_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_municipality_cycleways.gpkg")
 # mapview(aml_osm_cycleways, color="red") + mapview(aml_municipality_cycleways, color="darkblue") + mapview(aml_cyclelanes_existant, color="darkgreen")
 # mapview(aml_municipality_cycleways, color="red",alpha=1,lwd=7) + mapview(aml_osm_cycleways, color="yellow", alpha=0.5, lwd=7)
-
+mapview(aml_osm_cycleways, zcol="cycle_segregation")
 
 # Compare sources -----------------------------------------------------
 # Function to calculate percentage of overlap between
@@ -268,6 +268,6 @@ cycleway_overlap <- function (cycleways1, cycleways2, buffer_distance = 10){
 }
 
 # Cycleways in Municipalities but not in OSM
-aml_municipality_cycleways$osm_overlap <- cycleway_overlap(aml_osm_cycleways, aml_municipality_cycleways)
-osm_lacking_cycleways <- subset(aml_municipality_cycleways, osm_overlap <= 80)
-mapview(osm_lacking_cycleways, color="red") + mapview(aml_osm_cycleways, color="darkblue")
+# aml_municipality_cycleways$osm_overlap <- cycleway_overlap(aml_osm_cycleways, aml_municipality_cycleways)
+# osm_lacking_cycleways <- subset(aml_municipality_cycleways, osm_overlap <= 80)
+# mapview(osm_lacking_cycleways, color="red") + mapview(aml_osm_cycleways, color="darkblue")
