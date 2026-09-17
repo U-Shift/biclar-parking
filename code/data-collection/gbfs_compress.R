@@ -1,12 +1,17 @@
 # Run with: $ Rscript code/data-collection/gbfs_compress.R
 
+# Run everyday, at 3AM
+# Set up cron: $ crontab -e
+# Add the following line: 0 3 * * * cd /home/goncalo/Repos/biclar-parking && Rscript /home/goncalo/Repos/biclar-parking/code/data-collection/gbfs_compress.R
+# To validate: $ crontab -l
+
 BASE_FOLDERS <- c(
     "data/collection/gbfs_compressed/bird_lisboa",
-    # "data/collection/gbfs_compressed/bird_cascais",
-    # "data/collection/gbfs_compressed/bird_almada",
-    # "data/collection/gbfs_compressed/lime_almada",
-    # "data/collection/gbfs_compressed/lime_lisboa",
-    # "data/collection/gbfs_compressed/lime_oeiras",
+    "data/collection/gbfs_compressed/bird_cascais",
+    "data/collection/gbfs_compressed/bird_almada",
+    "data/collection/gbfs_compressed/lime_almada",
+    "data/collection/gbfs_compressed/lime_lisboa",
+    "data/collection/gbfs_compressed/lime_oeiras",
     "data/collection/gbfs_compressed/emel_gira"
 )
 
@@ -42,16 +47,27 @@ for (base_folder in BASE_FOLDERS) {
             message(sprintf("Processing and merging CSVs from '%s' into '%s'...", dir_path, parquet_file))
 
             csv_files <- list.files(dir_path, pattern = "\\.csv$", full.names = TRUE)
+            # Exclude empty (0 bytes) files
+            csv_files <- csv_files[file.size(csv_files) > 0]
 
             if (length(csv_files) == 0) {
-                message(sprintf("No CSV files found in '%s'. Skipping.", dir_path))
+                message(sprintf("No valid CSV files found in '%s'. Skipping.", dir_path))
                 next
             }
 
             # Read and bind all CSV files, tracking file path for timestamp extraction
             day_folder <- basename(dir_path)
             df <- purrr::map_dfr(csv_files, function(f) {
-                data <- utils::read.csv(f, stringsAsFactors = FALSE)
+                data <- tryCatch(
+                    utils::read.csv(f, stringsAsFactors = FALSE),
+                    error = function(e) {
+                        warning(sprintf("Could not read '%s': %s. Skipping.", f, e$message))
+                        NULL
+                    }
+                )
+                if (is.null(data) || nrow(data) == 0) {
+                    return(NULL)
+                }
                 time_part <- sub("\\.csv$", "", basename(f))
                 data$datetime <- as.POSIXct(paste(day_folder, time_part), format = "%Y%m%d %H%M%S")
                 data
