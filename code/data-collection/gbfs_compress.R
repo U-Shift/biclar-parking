@@ -1,18 +1,19 @@
 # Run with: $ Rscript code/data-collection/gbfs_compress.R
 
 BASE_FOLDERS <- c(
-    "data/collection/gbfs_compressed/bird_lisboa"
+    "data/collection/gbfs_compressed/bird_lisboa",
     # "data/collection/gbfs_compressed/bird_cascais",
     # "data/collection/gbfs_compressed/bird_almada",
     # "data/collection/gbfs_compressed/lime_almada",
     # "data/collection/gbfs_compressed/lime_lisboa",
-    # "data/collection/gbfs_compressed/lime_oeiras"
+    # "data/collection/gbfs_compressed/lime_oeiras",
+    "data/collection/gbfs_compressed/emel_gira"
 )
 
 today_str <- format(Sys.Date(), "%Y%m%d")
 
 # Subdirectories to check and compress under <base_folder>/collection/
-SUB_TYPES <- c("free_bike_status", "station_status")
+SUB_TYPES <- c("free_bike_status", "station_status", "station_information")
 
 # Note: Requires the 'arrow' package (install.packages("arrow"))
 for (base_folder in BASE_FOLDERS) {
