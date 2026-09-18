@@ -2,7 +2,7 @@
 # Aggregate building and dwelling characteristics onto the team H3 grid
 # All spatial operations and area calculations strictly use EPSG:3763 (Portugal metric CRS)
 #
-#
+# Run with: $ Rscript code/buildings/04_building_attributes.R > code/buildings/04_building_attributes_$(date +%Y%m%d).log 2>&1
 #
 # TWO COMPLEMENTARY COMPUTATIONS, JOINED BY `id` AT THE END
 # ---------------------------------------------------------
@@ -87,34 +87,10 @@ CHUNK_SIZE <- 50000
 
 run_suffix <- if (TEST_MODE) paste0("_test_", tolower(TEST_MUNICIPIO)) else ""
 
-# Local checkpoint directory for this script
-CHECKPOINT_DIR <- file.path(getwd(), "checkpoints", "building_attributes")
-
 message(sprintf(
-  "[config] TEST_MODE=%s  run_suffix='%s'\n[config] checkpoints: %s\n[config] target CRS: EPSG:%d",
-  TEST_MODE, run_suffix, CHECKPOINT_DIR, target_crs
+  "[config] TEST_MODE=%s  run_suffix='%s'\n[config] target CRS: EPSG:%d\n[config] parallel workers: %d  chunk size: %d",
+  TEST_MODE, run_suffix, target_crs, N_WORKERS, CHUNK_SIZE
 ))
-
-if (!dir.create(CHECKPOINT_DIR, recursive = TRUE, showWarnings = FALSE)) {
-  if (!dir.exists(CHECKPOINT_DIR)) {
-    stop(sprintf("Cannot create checkpoint directory:\n  %s\nCheck write permissions.", CHECKPOINT_DIR))
-  }
-  message(sprintf("[checkpoints] Resuming from existing directory: %s", CHECKPOINT_DIR))
-} else {
-  message(sprintf("[checkpoints] Created: %s", CHECKPOINT_DIR))
-}
-
-read_checkpoint <- function(path) {
-  if (!file.exists(path)) {
-    return(NULL)
-  }
-  tryCatch(readRDS(path), error = function(e) NULL)
-}
-
-write_checkpoint <- function(object, path) {
-  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-  saveRDS(object, path)
-}
 
 require_cols <- function(x, cols, what) {
   missing <- setdiff(cols, names(x))
@@ -269,12 +245,6 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
   library(dplyr)
   library(tibble)
 
-  ckpt <- sprintf("%s/bldg_unified_frags%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
-  cached <- read_checkpoint(ckpt)
-  if (!is.null(cached)) {
-    message(sprintf("[alloc %d/%d] checkpoint found (%d fragments)", i, n_chunks, nrow(cached)))
-    return(cached)
-  }
   t0 <- Sys.time()
 
   # 1. Spatial intersection against H3 grid
@@ -358,7 +328,6 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
   }
 
   out <- bind_rows(out_single, out_multi)
-  write_checkpoint(out, ckpt)
 
   n_placed <- length(idx_single) + length(idx_multi)
   n_out <- sum(n_hits_grid == 0)
