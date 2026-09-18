@@ -203,6 +203,7 @@ osm_parking_final <- osm_parking_final |> rename(
 )
 osm_parking_final <- osm_parking_final |> mutate(ID = as.integer(ID)) #id as integer and not string
 osm_parking_final <- osm_parking_final |> mutate(is_covered = ifelse(is_covered == "yes", TRUE, FALSE)) #is_covered as boolean and not string
+osm_parking_final <- osm_parking_final |> mutate(capacity = ifelse(is.na(capacity),4,capacity)) #if capacity is NA, change to 4
 mapview(osm_parking_final, zcol="capacity")
 mapview(osm_parking_final, col.regions="darkblue")
 st_write(osm_parking_final,"data/base/existing_parking/aml_osm_parking.gpkg",delete_dsn=TRUE)
