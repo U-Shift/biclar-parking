@@ -1,11 +1,25 @@
+# Script to aggregate bicycle parking data. Code steps:
+# 1. Load TML data - EMEL data was used to update OSM, while the rest of the TML data might be useful later.
+# 2. Load MUBi data - contrary to what we thought, this data was not of the best quality, and was rendered useless.
+# 3. CRITICAL STEP: Load and standardize OSM data - Fetch amenity=bicycle_parking from OSM, turn polygons into points
+# and standardize column naming, as well as aggregating data to the used grid.
+# For parking points without capacity, it was assumed as 4. The output from step 3 is available at:
+# "/data/base/existing_parking/aml_osm_parking.gpkg" and
+# "/data/base/existing_parking/grid_osm_parking.gpkg"
+# 4. Comparison between OSM and MUBi data - turned out to not be necessary since MUBi data was excluded from analysis.
+# 5. Code to compare different databases - used to compare EMEL and OSM, to know what was needed to add to OSM.
+
 library(dplyr)
 library(sf)
 library(mapview)
 library(units)
+library(tidyr)
 
-# TML PMUS Database -------------------------------------------------------
+source("code/00_data_load.R")
 
-## Bike parking spaces (Only Lisbon!) -------------------------------------------------------
+# 1. TML PMUS Database -------------------------------------------------------
+
+## 1.1. Bike parking spaces (Only Lisbon!) -------------------------------------------------------
 
 lisbon_parking_points <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/cml_ciclovia_estacionamento/items?f=json&limit=1000") |>
   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/cml_ciclovia_estacionamento/items?f=json&limit=1000&offset=1000")) |>
@@ -41,7 +55,7 @@ lisbon_parking_points_v2 <- lisbon_parking_points_v2 |>
 lisbon_parking_points_v2$municipality <- "Lisboa"
 
 
-## Shared mobility parking spaces -------------------------------------------------------
+## 1.2. Shared mobility parking spaces -------------------------------------------------------
 # aml_shared_mobility_open <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/modos_partilhados_pontos_partilha_aml/items?f=json&limit=1000") |>
 #   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/modos_partilhados_pontos_partilha_aml/items?f=json&limit=1000&offset=1000")) |>
 #   bind_rows(st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/modos_partilhados_pontos_partilha_aml/items?f=json&limit=1000&offset=2000"))
@@ -74,7 +88,7 @@ table(aml_shared_mobility$Modo)
 # Trotinetas
 # 341
 
-## Bike parking at interfaces (with demand) -------------------------------------------------------
+## 1.3. Bike parking at interfaces (with demand) -------------------------------------------------------
 
 # Demand data, from PMMUS. Details, from Relatório Técnico da Caracterização e Diagnóstico (Pag 321)
 
@@ -150,67 +164,11 @@ table(aml_bike_parking_interfaces$Município)
 # 4                  13                  21                  10                   2
 
 
-# Fetch data from OSM ---------------------------------------------------------------------
-
-# https://wiki.openstreetmap.org/wiki/Tag:amenity%3Dbicycle_parking
-
-# Create overpassturbo for nodes[amenity="bicycle_parking"]
-library(osmdata)
-aml = sf::st_read("https://github.com/U-Shift/MQAT/raw/refs/heads/main/geo/MUNICIPIOSgeo.gpkg", quiet = TRUE)
-aml_bbox <- st_bbox(aml)
-mapview(aml) + mapview(aml_bbox)
-
-q <- opq(aml_bbox) |>
-  add_osm_feature(key="amenity", value="bicycle_parking")
-
-set_overpass_url("https://overpass-api.de/api/interpreter")
-osm_parking <- osmdata_sf(q)
-summary(osm_parking)
-osm_parking_points <- osm_parking$osm_points |> mutate(capacity = as.integer(capacity))
-summary(osm_parking_points)
-nrow(osm_parking_points)
-osm_parking_pygons <- osm_parking$osm_polygons |> mutate(capacity = as.integer(capacity))
-summary(osm_parking_pygons)
-nrow(osm_parking_pygons)
-mapview(osm_parking_points, zcol="capacity") + mapview(osm_parking_pygons, zcol="capacity")
-
-sf::st_write(
-  osm_parking_final,
-  sprintf("data/raw/parking_osm/osm_%s.gpkg", format(Sys.Date(), "%Y%m%d")),
-  delete_dsn = TRUE
-)
-
-# Consolidation of OSM data ---------------------------------------
-osm_parking_centroids <- st_centroid(osm_parking_pygons)
-osm_parking_beta <- bind_rows(osm_parking_points, osm_parking_centroids)
-osm_parking_beta <- osm_parking_beta[!is.na(osm_parking_beta$amenity),] # removing vertices from polygon objects (which were in "osm_parking_points" without any data)
-osm_parking_beta <- osm_parking_beta |> select(osm_id, bicycle_parking, capacity, covered, geometry)
-
-
-#osm_parking_beta_filter <- osm_parking_beta |> filter(!is.na(capacity))
-#mapview(osm_parking_beta, zcol="capacity")
-#mapview(osm_parking_beta_filter, zcol="capacity")
-
-# Add municípios
-osm_parking_final <- st_join(osm_parking_beta, aml, join = st_within)
-
-# Standardizing column names
-osm_parking_final <- osm_parking_final |> rename(
-  ID = osm_id,
-  municipality = Concelho,
-  structure_type = bicycle_parking,
-  is_covered = covered
-)
-osm_parking_final <- osm_parking_final |> mutate(ID = as.integer(ID)) #id as integer and not string
-osm_parking_final <- osm_parking_final |> mutate(is_covered = ifelse(is_covered == "yes", TRUE, FALSE)) #is_covered as boolean and not string
-mapview(osm_parking_final, zcol="capacity")
-mapview(osm_parking_final, col.regions="darkblue")
-
-# MUBI: Cidade Ciclável ---------------------------------------------------
+# 2. MUBI: Cidade Ciclável ---------------------------------------------------
 # https://cidadeciclavel.mubi.pt/
 # Data scraped from their API, using Bruno (github.com/U-Shift/MobilityDataPT/commit/4bfc4fc8c3bf84f09da69f7f3ea4595ffd5baf25)
 
-## Existing infrastructure ---------------------------------------------------
+## 2.1. Existing infrastructure ---------------------------------------------------
 mubi_parking_points <- jsonlite::fromJSON("/data/biclar-parking/raw/mubi_cidadeciclavel/bicicletarios.json") |>
   as_tibble() |>
   mutate(
@@ -251,7 +209,7 @@ table(mubi_parking_points$Concelho)
 
 
 
-## Infrastructure requests ---------------------------------------------------
+## 2.2. Infrastructure requests ---------------------------------------------------
 mubi_parking_requests <- jsonlite::fromJSON("/data/biclar-parking/raw/mubi_cidadeciclavel/pedidos.json") |>
   as_tibble() |>
   mutate(
@@ -272,9 +230,81 @@ summary(mubi_parking_requests$support)
 # 0.000   1.000   2.000   2.368   3.000  35.000
 
 
+# 3.1. Fetch data from OSM ---------------------------------------------------------------------
+
+# https://wiki.openstreetmap.org/wiki/Tag:amenity%3Dbicycle_parking
+
+# Create overpassturbo for nodes[amenity="bicycle_parking"]
+library(osmdata)
+aml = sf::st_read("https://github.com/U-Shift/MQAT/raw/refs/heads/main/geo/MUNICIPIOSgeo.gpkg", quiet = TRUE)
+aml_bbox <- st_bbox(aml)
+mapview(aml) + mapview(aml_bbox)
+
+q <- opq(aml_bbox) |>
+  add_osm_feature(key="amenity", value="bicycle_parking")
+
+set_overpass_url("https://overpass-api.de/api/interpreter")
+osm_parking <- osmdata_sf(q)
+summary(osm_parking)
+osm_parking_points <- osm_parking$osm_points |> mutate(capacity = as.integer(capacity))
+summary(osm_parking_points)
+nrow(osm_parking_points)
+osm_parking_pygons <- osm_parking$osm_polygons |> mutate(capacity = as.integer(capacity))
+summary(osm_parking_pygons)
+nrow(osm_parking_pygons)
+mapview(osm_parking_points, zcol="capacity") + mapview(osm_parking_pygons, zcol="capacity")
+
+sf::st_write(
+  osm_parking_final,
+  sprintf("data/raw/parking_osm/osm_%s.gpkg", format(Sys.Date(), "%Y%m%d")),
+  delete_dsn = TRUE
+)
+
+# 3.2. Consolidation of OSM data ---------------------------------------
+osm_parking_centroids <- st_centroid(osm_parking_pygons)
+osm_parking_beta <- bind_rows(osm_parking_points, osm_parking_centroids)
+osm_parking_beta <- osm_parking_beta[!is.na(osm_parking_beta$amenity),] # removing vertices from polygon objects (which were in "osm_parking_points" without any data)
+osm_parking_beta <- osm_parking_beta |> select(osm_id, bicycle_parking, capacity, covered, geometry)
 
 
-# Aggregation of OSM and MUBi data (not necessary) ------------------------------
+#osm_parking_beta_filter <- osm_parking_beta |> filter(!is.na(capacity))
+#mapview(osm_parking_beta, zcol="capacity")
+#mapview(osm_parking_beta_filter, zcol="capacity")
+
+# Add municípios
+osm_parking_final <- st_join(osm_parking_beta, aml, join = st_within)
+
+# Standardizing column names
+osm_parking_final <- osm_parking_final |> rename(
+  ID = osm_id,
+  municipality = Concelho,
+  structure_type = bicycle_parking,
+  is_covered = covered
+)
+osm_parking_final <- osm_parking_final |> mutate(ID = as.integer(ID)) #id as integer and not string
+osm_parking_final <- osm_parking_final |> mutate(is_covered = ifelse(is_covered == "yes", TRUE, FALSE)) #is_covered as boolean and not string
+osm_parking_final <- osm_parking_final |> mutate(capacity = ifelse(is.na(capacity),4,capacity)) #if capacity is NA, change to 4
+mapview(osm_parking_final, zcol="capacity")
+mapview(osm_parking_final, col.regions="darkblue")
+st_write(osm_parking_final,"data/base/existing_parking/aml_osm_parking.gpkg",delete_dsn=TRUE)
+
+
+# 3.3. OSM aggregation in grid ----------------------------------------------------
+osm_grid_points <- st_join(osm_parking_final, grid["gid"], join=st_within) |> st_drop_geometry() |> group_by(gid) |>
+  summarise(
+    n_points = n(),
+    capacity = sum(capacity, na.rm = TRUE)
+  )
+osm_parking_grid <- grid |>
+  left_join(osm_grid_points, by="gid") |>
+  mutate(
+    n_points = replace_na(n_points,0),
+    capacity = replace_na(capacity, 0)
+  )
+mapview(osm_parking_grid, zcol="capacity")
+st_write(osm_parking_grid,"data/base/existing_parking/osm_parking_grid.gpkg",delete_dsn=TRUE)
+
+# 4. Aggregation of OSM and MUBi data (deprecated) ------------------------------
 # OSM -> osm_id, bicycle_parking (tipo de estrutura), capacity, covered, geometry; adicionar municipio
 # MUBi -> id, structureType, isCovered, slots, Concelho, geometry
 # Final -> data_source, ID, structure_type, capacity, is_covered, municipality, geometry
@@ -294,7 +324,7 @@ total_parking_beta <- bind_rows(osm_parking_final=osm_parking_final, mubi_parkin
 mapview(total_parking_beta, zcol="capacity")
 
 
-## Function to remove duplicates -------------------------------------------
+## 4.1. Function to remove duplicates -------------------------------------------
 # Methodology:
 # Euclidean buffer of radius "distance_threshold", created for each parking location
 # If any point other than the original exists inside this buffer, the points with one of the following characteristics are removed:
@@ -328,7 +358,7 @@ remove_duplicates <- function(points, distance_threshold, capacity_column) {
 total_parking_final <- remove_duplicates(total_parking_beta, distance_threshold=25, capacity_column="capacity")
 mapview(total_parking_final, zcol="capacity")
 
-### Benchmarks for different distance thresholds --------------------------
+## 4.2. Benchmarks for different distance thresholds --------------------------
 # distance_threshold        nrow(total_parking_final)     difference from previous
 #         5m                          3043                           -
 #         10m                         2804                          239
@@ -350,10 +380,10 @@ mapview(total_parking_final, zcol="capacity")
 
 #write_sf(mubi_parking_final, "/data/biclar-parking/base/existing_parking/aml_mubi_parking.gpkg")
 #write_sf(lisbon_parking_points_v2, "/data/biclar-parking/base/existing_parking/lisbon_emel_parking.gpkg")
-write_sf(total_parking_final, "/data/biclar-parking/base/existing_parking/aml_total_parking.gpkg")
+#write_sf(total_parking_final, "/data/biclar-parking/base/existing_parking/aml_total_parking.gpkg")
 
-
-## Function to compare different data sources (i.e. points that are lacking in one) --------
+# 5. Comparing different databases ----------------------------------
+## 5.1. Function to compare different data sources (i.e. points that are lacking in one) --------
 lacking_points <- function(base_source, check_source, distance_threshold) { #distance_threshold should be the same as in the function "remove duplicates"
   removal_list <- logical(nrow(base_source))
   distance_threshold <- units::set_units(distance_threshold, "m")
@@ -378,7 +408,7 @@ osm_lacking_points <- lacking_points(lisbon_parking_points_v2, osm_parking_final
 
 
 
-### Make EMEL data proper to put into OSM (only necessary again if the EMEL database is updated) -----------------------------------
+## 5.2. Make EMEL data proper to put into OSM (only necessary again if the EMEL database is updated) -----------------------------------
 add_to_osm <- osm_lacking_points |>
   rename(bicycle_parking = structure_type, covered = is_covered) |>
   mutate(covered = dplyr::case_when(
