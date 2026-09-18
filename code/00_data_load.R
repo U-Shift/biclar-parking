@@ -12,3 +12,10 @@ municipalities <- sf::st_read("data/geo/municipalities.gpkg")
 
 conversion_dicofre <- read.csv("https://raw.githubusercontent.com/U-Shift/IMPT-data/refs/heads/main/useful_data/dicofre_16_24_conversion.csv")
 conversion_dicofre_weight <- read.csv("https://raw.githubusercontent.com/U-Shift/IMPT-data/refs/heads/main/useful_data/dicofre_16_24_conversion_full_with_weights.csv")
+
+
+# LMA cycleway network #22 ----------------------------------------------
+cycleways <- sf::st_read("data/base/existing_cycleways/aml_osm_cycleways.gpkg")
+
+# LMA bicycle parking locations #21 -------------------------------------
+parking <- sf::st_read("data/base/existing_parking/aml_osm_parking.gpkg")

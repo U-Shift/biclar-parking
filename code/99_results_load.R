@@ -1,11 +1,5 @@
 # This script should include the outputs of all analysis performed
 
-# LMA cycleway network #22
-cycleways <- sf::st_read("data/base/existing_cycleways/aml_osm_cycleways.gpkg")
-
-# LMA bicycle parking locations #21
-parking <- sf::st_read("data/base/existing_parking/aml_osm_parking.gpkg")
-
 # GBFS data #29
 grid_gbfs_bikes <- read.csv("data/analysis/gbfs/grid_bikes_all_0-24.csv")
 
