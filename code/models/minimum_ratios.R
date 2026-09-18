@@ -7,3 +7,6 @@
 library(dplyr)
 library(sf)
 library(mapview)
+
+source("code/00_data_load.R")
+source("code/99_results_load.R")
