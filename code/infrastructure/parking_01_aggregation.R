@@ -205,6 +205,7 @@ osm_parking_final <- osm_parking_final |> mutate(ID = as.integer(ID)) #id as int
 osm_parking_final <- osm_parking_final |> mutate(is_covered = ifelse(is_covered == "yes", TRUE, FALSE)) #is_covered as boolean and not string
 mapview(osm_parking_final, zcol="capacity")
 mapview(osm_parking_final, col.regions="darkblue")
+st_write(osm_parking_final,"data/base/existing_parking/aml_osm_parking.gpkg",delete_dsn=TRUE)
 
 # MUBI: Cidade Ciclável ---------------------------------------------------
 # https://cidadeciclavel.mubi.pt/
@@ -350,7 +351,7 @@ mapview(total_parking_final, zcol="capacity")
 
 #write_sf(mubi_parking_final, "/data/biclar-parking/base/existing_parking/aml_mubi_parking.gpkg")
 #write_sf(lisbon_parking_points_v2, "/data/biclar-parking/base/existing_parking/lisbon_emel_parking.gpkg")
-write_sf(total_parking_final, "/data/biclar-parking/base/existing_parking/aml_total_parking.gpkg")
+#write_sf(total_parking_final, "/data/biclar-parking/base/existing_parking/aml_total_parking.gpkg")
 
 
 ## Function to compare different data sources (i.e. points that are lacking in one) --------
