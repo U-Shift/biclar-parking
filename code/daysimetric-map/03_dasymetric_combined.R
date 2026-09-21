@@ -1,79 +1,36 @@
-# Dasymetric residential population map - COS class weight + building volume combined
+# =============================================================================
+# Dasymetric residential population mapping (Parameterized Workflow)
 #
-# PURPOSE
-# -------
-# This script is a synthesis of two earlier dasymetric approaches:
+# Modes:
+#   - "combined":      Building volume inside residential COS -> COS area fallback -> BGRI area fallback (default)
+#   - "cos_only":      Residential COS land-use area weights only (no fallback)
+#   - "all_buildings":  Total building volume across all buildings only (no fallback)
 #
-#   1. 02_census_grid_with_cos.R (IMPT-data project)
-#      Weights each grid × BGRI fragment by COS land-use class × area:
-#      vertical apartments = 3×, horizontal = 1×, discontinuous = 0.6×, sparse = 0.3×.
-#      Pro: < 1% population loss.
-#      Con: ignores building height — a tall apartment block and a small house in the
-#           same COS class get the same per-area weight.
+# Procedure:
+#   1. Setup & Load: Read H3 r9 grid, municipalities, BGRI 2021 census, and conditionally
+#      load residential COS and/or building footprints based on DASYMETRIC_MODE.
+#   2. Weight Preparation:
+#      - If "combined": Clip buildings to residential COS mask, compute fragment volume.
+#      - If "all_buildings": Compute fragment volume across all buildings (no COS clip).
+#      - If "cos_only": Compute weighted COS area.
+#      - Bare BGRI area: Intersect grid x BGRI for raw area fallback (only in "combined" mode).
+#   3. Weight Assignment: Combine or assign weights according to active DASYMETRIC_MODE.
+#   4. Disaggregation: Prorate BGRI census counts across H3 cells.
+#   5. Grid Join & Export: Aggregate to H3 cells, calculate demographic indicators,
+#      validate against BGRI census totals, and export GPKG and CSV.
 #
-#   2. 02c_dasymetric_population.R (this folder)
-#      Weights each fragment by residential building volume (footprint × height),
-#      sourced from the Global Building Atlas, clipped to residential COS zones.
-#      Pro: captures density variation within a COS class.
-#      Con: ~8.8% population loss where the building atlas has gaps (Amadora,
-#           Vila Franca de Xira) — blocks with zero matched volume are dropped.
+# Inputs (under data/, mounted from server):
+#   - data/geo/grid.gpkg
+#   - data/geo/municipalities.gpkg
+#   - data/base/daysimetric/BGRI21_170.gpkg
+#   - data/base/daysimetric/cos_residential_aml.gpkg (used in combined & cos_only)
+#   - data/base/daysimetric/lisbon_metro_buildings_footprints.geojson (used in combined & all_buildings)
 #
-# STRATEGY: hierarchical fallback
-# --------------------------------
-# For every (H3 cell, BGRI block) pair the weight follows this priority:
-#
-#   Priority 1 — building volume > 0      → use volume weight   (best proxy)
-#   Priority 2 — COS residential area > 0 → use COS-area × class weight (good proxy)
-#   Priority 3 — neither                  → use raw BGRI-area overlap (last resort)
-#
-# Nothing is ever dropped: every BGRI block's population lands somewhere.
-# Target: < 1% total population loss vs. raw BGRI census total.
-#
-# OUTPUT
-# ------
-# data/base/dasymetric/grid_dasymetric_combined[_test_<municipio>].gpkg + .csv
-# One row per H3 r9 cell with total population and all demographic breakdowns
-# (age groups, sex, households, buildings) — same schema as 02_census_grid_with_cos.R,
-# not just total_pop like 02c.
-#
-# DATA ACCESS
-# -----------
-# This project stores no data in the repo. Data lives on the team server at
-# /data/biclar-parking/ and is accessed by mounting it locally with sshfs:
-#
-#   mkdir data   # inside the repo root (already ignored by .gitignore)
-#   sshfs username@ushift-alfa:/data/biclar-parking ./data
-#
-# All paths below are plain relative paths from the repo root, e.g.
-# "data/base/daysimetric/BGRI21_170.gpkg". No impt_read/impt_write wrapper needed.
-#
-# INPUTS (all under data/, mounted from server)
-# ----
-#   data/geo/grid.gpkg                                         — H3 r9 grid (gid col)
-#   data/geo/municipalities.gpkg                               — municipality boundaries
-#   data/base/daysimetric/BGRI21_170.gpkg                      — 2021 census blocks
-#   data/base/daysimetric/cos_residential_aml.gpkg             — residential COS (from 01c)
-#   data/base/daysimetric/lisbon_metro_buildings_footprints.geojson  — buildings (from 02b)
-#
-# DEPENDENCIES
-# ------------
-# Run 01c_cos_residential_prep.R and 02b_buildings_volume_prep.R before this script.
-# Those scripts still use impt_read/impt_write internally — that's fine, this script
-# only needs their output files, which it reads directly.
-#
-# PARALLELISM & CHECKPOINTS
-# -------------------------
-# The two expensive intersection steps (clip buildings to COS; intersect grid × buildings
-# × BGRI) are chunked and run sequentially with per-chunk checkpoints
-# written to data/base/dasymetric/checkpoints_combined/. An interrupted run resumes by
-# re-running from the top: cheap steps redo, chunked steps reload their checkpoints.
-#
-# TEST_MODE
-# ---------
-# Set TEST_MODE <- TRUE to run against one municipality only (Oeiras by default) for
-# fast sanity-checking. Compare sum(grid_final$population) against the subset BGRI total.
+# Outputs:
+#   - data/base/daysimetric/grid_dasymetric_<mode>[_test_<municipio>].gpkg / .csv
+# =============================================================================
 
-# 0. Setup ---------------------------------------------------------------
+# 0. Setup -------------------------------------------------------------------
 
 required_packages <- c("sf", "dplyr", "tidyr", "tibble", "future", "furrr", "mapview")
 missing_packages <- setdiff(required_packages, rownames(installed.packages()))
@@ -87,8 +44,7 @@ library(future)
 library(furrr)
 library(mapview)
 
-# Run this script from the repo root (biclar-parking/) so all relative paths
-# below resolve correctly against the mounted ./data/ folder.
+# Run from repo root so relative paths resolve against ./data/
 stopifnot(
   "Run from the repo root: setwd('/path/to/biclar-parking')" =
     file.exists("data") || dir.exists("data")
@@ -96,33 +52,30 @@ stopifnot(
 
 # --- Configuration flags ---
 
-# Local checkpoints (not the sshfs-mounted data/ folder). N_WORKERS reduced
-# from Rosa's original 8 (tuned for her machine: 28 cores, ~107GB RAM) to 4,
-# matching this shared server's specs (8 cores, ~26GB available at time of run).
+# DASYMETRIC_MODE: "combined" | "cos_only" | "all_buildings"
+DASYMETRIC_MODE <- "combined"
+stopifnot(DASYMETRIC_MODE %in% c("combined", "cos_only", "all_buildings"))
+
 N_WORKERS <- 4
-plan(multisession, workers = N_WORKERS)
+if (DASYMETRIC_MODE != "cos_only") {
+  plan(multisession, workers = N_WORKERS)
+}
 
 target_crs <- 3763 # EPSG:3763 — Portugal metric CRS
 
-# TEST MODE: restrict the whole run to one municipality for fast sanity-checking.
+# TEST_MODE: restrict to a single municipality for rapid testing
 TEST_MODE <- FALSE
 TEST_MUNICIPIO <- "Oeiras" # must match a 'municipio' name in useful_data/municipalities.csv
 
-# Number of building rows processed per parallel chunk.
+# Number of building rows processed per parallel chunk
 CHUNK_SIZE <- 50000
 
-# Checkpoint directory — stored LOCALLY (not under data/) because the sshfs/bind-mounted
-# data/ folder may be read-only from the client machine. Local checkpoints survive
-# disconnection and can be safely deleted after a successful full run.
-# Using an absolute path so PSOCK workers resolve it correctly regardless of their wd.
-CHECKPOINT_DIR <- file.path(getwd(), "checkpoints", "dasymetric_combined")
+# Local checkpoint directory (specific to mode so checkpoints never clash)
+CHECKPOINT_DIR <- file.path(getwd(), "checkpoints", paste0("dasymetric_", DASYMETRIC_MODE))
 
-# Unique suffix so TEST_MODE and full-run checkpoints never share a filename.
+# Suffix for test runs
 run_suffix <- if (TEST_MODE) paste0("_test_", tolower(TEST_MUNICIPIO)) else ""
 
-# Create the checkpoint directory in the main process before any parallel dispatch.
-# Stop with a clear message if it fails (e.g. permission denied) rather than
-# letting workers fail silently.
 if (!dir.create(CHECKPOINT_DIR, recursive = TRUE, showWarnings = TRUE)) {
   if (!dir.exists(CHECKPOINT_DIR)) {
     stop(sprintf(
@@ -130,13 +83,12 @@ if (!dir.create(CHECKPOINT_DIR, recursive = TRUE, showWarnings = TRUE)) {
       CHECKPOINT_DIR
     ))
   }
-  # dir.create() returns FALSE if dir already exists — that's fine, just resume.
   message(sprintf("[checkpoints] Resuming from existing directory: %s", CHECKPOINT_DIR))
 } else {
   message(sprintf("[checkpoints] Created: %s", CHECKPOINT_DIR))
 }
 
-# Helper: try to read a checkpointed .Rds; return NULL if it doesn't exist yet.
+# Checkpoint helpers
 read_checkpoint <- function(path) {
   if (!file.exists(path)) {
     return(NULL)
@@ -144,22 +96,17 @@ read_checkpoint <- function(path) {
   tryCatch(readRDS(path), error = function(e) NULL)
 }
 
-# Helper: write a checkpointed .Rds.
-# dir.create() here is belt-and-suspenders: the directory should already exist
-# (created in the main process above) but this guards against edge cases where
-# a worker runs with a slightly different environment.
 write_checkpoint <- function(object, path) {
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
   saveRDS(object, path)
 }
 
 
-# 1. Load data -----------------------------------------------------------
+# 1. Load data ---------------------------------------------------------------
 
 message("[load] Reading BGRI census blocks...")
 census_bgri <- sf::st_read("data/base/daysimetric/BGRI21_170.gpkg", quiet = TRUE)
 
-# Schema sanity check — fail loudly rather than silently use wrong columns.
 stopifnot(
   "N_INDIVIDUOS" %in% names(census_bgri),
   "BGRI2021" %in% names(census_bgri),
@@ -174,42 +121,37 @@ message(sprintf(
   "[load] BGRI: %d blocks, total N_INDIVIDUOS = %s",
   nrow(census_bgri), format(sum(census_bgri$N_INDIVIDUOS, na.rm = TRUE), big.mark = ",")
 ))
-
-message("[load] Reading COS residential polygons...")
-cos_residential_aml <- sf::st_read("data/base/daysimetric/cos_residential_aml.gpkg", quiet = TRUE)
-message(sprintf("[load] COS residential: %d polygons", nrow(cos_residential_aml)))
-
-message("[load] Reading Global Building Atlas footprints...")
-buildings <- sf::st_read("data/base/daysimetric/lisbon_metro_buildings_footprints.geojson", quiet = TRUE)
-message(sprintf("[load] Buildings: %d footprints", nrow(buildings)))
-
-# Rename building attribute columns to avoid collisions with the grid's id/area columns.
-buildings <- buildings |>
-  rename(
-    building_id           = id,
-    building_footprint_m2 = footprint_m2,
-    building_volume_m3    = volume_m3
-  )
-
-# Fix invalid geometries at load time.
-message("[prep] st_make_valid on BGRI, COS, buildings...")
 census_bgri <- st_make_valid(census_bgri)
-cos_residential_aml <- st_make_valid(cos_residential_aml)
-buildings <- st_make_valid(buildings)
-message("[prep] done")
+
+# Load COS if needed by active mode
+if (DASYMETRIC_MODE %in% c("combined", "cos_only")) {
+  message("[load] Reading COS residential polygons...")
+  cos_residential_aml <- sf::st_read("data/base/daysimetric/cos_residential_aml.gpkg", quiet = TRUE) |> st_make_valid()
+  message(sprintf("[load] COS residential: %d polygons", nrow(cos_residential_aml)))
+}
+
+# Load buildings if needed by active mode
+if (DASYMETRIC_MODE %in% c("combined", "all_buildings")) {
+  message("[load] Reading Global Building Atlas footprints...")
+  buildings <- sf::st_read("data/base/daysimetric/lisbon_metro_buildings_footprints.geojson", quiet = TRUE)
+  message(sprintf("[load] Buildings: %d footprints", nrow(buildings)))
+
+  buildings <- buildings |>
+    rename(
+      building_id           = id,
+      building_footprint_m2 = footprint_m2,
+      building_volume_m3    = volume_m3
+    ) |>
+    st_make_valid()
+}
+message("[prep] Data loaded and validated")
 
 
-# 2. Load grid and municipalities -----------------------------------------
-#
-# The grid is identified by `gid` (per the project README: "the id for a grid
-# cell is called gid"). Loaded directly — same line as 00_data_load.R.
-# Municipality names come from useful_data/municipalities.csv (mid, name) joined
-# onto the spatial layer, same pattern as 00_data_load.R's approach.
+# 2. Load grid and municipalities -------------------------------------------
 
 message("[grid] Loading H3 r9 grid from data/geo/grid.gpkg...")
 grid <- sf::st_read("data/geo/grid.gpkg", quiet = TRUE) |> st_make_valid()
-# Standardise to an `id` column so all downstream joins/group_bys are consistent.
-# Per README the column is called `gid` — rename defensively in case it differs.
+
 if ("gid" %in% names(grid)) {
   grid <- grid |> rename(id = gid)
 } else if (!"id" %in% names(grid)) {
@@ -222,7 +164,6 @@ message(sprintf("[grid] Grid loaded: %d cells", nrow(grid)))
 message("[grid] Loading municipalities from data/geo/municipalities.gpkg...")
 municipalities_sf <- sf::st_read("data/geo/municipalities.gpkg", quiet = TRUE) |> st_make_valid()
 
-# Attach human-readable names from useful_data/municipalities.csv (mid, name).
 if (!"municipio" %in% names(municipalities_sf) && file.exists("useful_data/municipalities.csv")) {
   mun_lookup <- read.csv("useful_data/municipalities.csv", stringsAsFactors = FALSE)
   if (all(c("mid", "name") %in% names(mun_lookup))) {
@@ -235,7 +176,7 @@ if (!"municipio" %in% names(municipalities_sf) && file.exists("useful_data/munic
 }
 
 
-# 3. TEST MODE subsetting ------------------------------------------------
+# 3. TEST MODE subsetting ---------------------------------------------------
 
 if (TEST_MODE) {
   message(sprintf("[TEST MODE] Subsetting to municipality: %s", TEST_MUNICIPIO))
@@ -256,57 +197,68 @@ if (TEST_MODE) {
 
   ref_crs <- st_crs(test_boundary)
   grid <- st_transform(grid, ref_crs)[test_boundary, ]
-  buildings <- st_transform(buildings, ref_crs)[test_boundary, ]
   census_bgri <- st_transform(census_bgri, ref_crs)[test_boundary, ]
-  cos_residential_aml <- st_transform(cos_residential_aml, ref_crs)[test_boundary, ]
+  if (DASYMETRIC_MODE %in% c("combined", "cos_only")) {
+    cos_residential_aml <- st_transform(cos_residential_aml, ref_crs)[test_boundary, ]
+  }
+  if (DASYMETRIC_MODE %in% c("combined", "all_buildings")) {
+    buildings <- st_transform(buildings, ref_crs)[test_boundary, ]
+  }
 
   message(sprintf(
-    "[TEST MODE] Subset: %d grid cells, %d buildings, %d BGRI blocks",
-    nrow(grid), nrow(buildings), nrow(census_bgri)
+    "[TEST MODE] Subset: %d grid cells, %d BGRI blocks",
+    nrow(grid), nrow(census_bgri)
   ))
 }
 
 
-# 4. Reproject to EPSG:3763 for metric calculations ----------------------
+# 4. Reproject to EPSG:3763 for metric calculations ------------------------
 
 message("[prep] Reprojecting to EPSG:3763...")
-buildings <- st_transform(buildings, target_crs)
 census_bgri <- st_transform(census_bgri, target_crs)
 grid <- st_transform(grid, target_crs) |> st_make_valid()
-cos_residential_aml <- st_transform(cos_residential_aml, target_crs)
-
-
-# 5. Prepare weight layers -----------------------------------------------
-
-# --- WEIGHT B: COS class weights (same as 02_census_grid_with_cos.R) ---
-cos_weighted <- cos_residential_aml |>
-  rename(classification = COS23_n4_L) |>
-  mutate(cos_weight = case_when(
-    classification == "Áreas edificadas residenciais contínuas predominantemente verticais" ~ 3.0,
-    classification == "Áreas edificadas residenciais contínuas predominantemente horizontais" ~ 1.0,
-    classification == "Áreas edificadas residenciais descontínuas" ~ 0.6,
-    TRUE ~ 0.3
-  )) |>
-  select(classification, cos_weight)
-
-# Dissolve COS into one mask for clipping buildings.
-message("[prep] Dissolving residential COS into a single mask (may take a few minutes)...")
-cos_residential_mask <- cos_residential_aml |>
-  st_make_valid() |>
-  st_union() |>
-  st_make_valid()
-
-if (!all(st_geometry_type(cos_residential_mask) %in% c("POLYGON", "MULTIPOLYGON"))) {
-  message("[prep] Non-polygon geometry from st_union() — extracting polygonal parts")
-  cos_residential_mask <- st_collection_extract(cos_residential_mask, "POLYGON") |> st_make_valid()
+if (DASYMETRIC_MODE %in% c("combined", "cos_only")) {
+  cos_residential_aml <- st_transform(cos_residential_aml, target_crs)
 }
-message(sprintf(
-  "[prep] COS mask ready: %d vertices",
-  nrow(st_coordinates(cos_residential_mask))
-))
+if (DASYMETRIC_MODE %in% c("combined", "all_buildings")) {
+  buildings <- st_transform(buildings, target_crs)
+}
 
-# --- BGRI slim version for intersections ---
-# Split MULTIPOLYGON → POLYGON for predictable intersection behaviour.
+
+# 5. Prepare weight layers --------------------------------------------------
+
+if (DASYMETRIC_MODE %in% c("combined", "cos_only")) {
+  # COS class weights
+  cos_weighted <- cos_residential_aml |>
+    rename(classification = COS23_n4_L) |>
+    mutate(cos_weight = case_when(
+      classification == "Áreas edificadas residenciais contínuas predominantemente verticais" ~ 3.0,
+      classification == "Áreas edificadas residenciais contínuas predominantemente horizontais" ~ 1.0,
+      classification == "Áreas edificadas residenciais descontínuas" ~ 0.6,
+      TRUE ~ 0.3
+    )) |>
+    select(classification, cos_weight)
+}
+
+if (DASYMETRIC_MODE == "combined") {
+  # Dissolve COS into a single mask for clipping buildings
+  message("[prep] Dissolving residential COS into a single mask (may take a few minutes)...")
+  cos_residential_mask <- cos_residential_aml |>
+    st_make_valid() |>
+    st_union() |>
+    st_make_valid()
+
+  if (!all(st_geometry_type(cos_residential_mask) %in% c("POLYGON", "MULTIPOLYGON"))) {
+    message("[prep] Non-polygon geometry from st_union() — extracting polygonal parts")
+    cos_residential_mask <- st_collection_extract(cos_residential_mask, "POLYGON") |> st_make_valid()
+  }
+  message(sprintf(
+    "[prep] COS mask ready: %d vertices",
+    nrow(st_coordinates(cos_residential_mask))
+  ))
+}
+
+# BGRI slim version for intersections
 census_simple <- census_bgri |>
   select(
     BGRI2021, N_INDIVIDUOS,
@@ -319,7 +271,7 @@ census_simple <- census_bgri |>
   st_make_valid()
 
 
-# 6. Filter grid to active cells (overlap BGRI) --------------------------
+# 6. Filter grid to active cells (overlap BGRI) -----------------------------
 
 message("[grid] Filtering to cells that overlap at least one BGRI block...")
 n_grid_raw <- nrow(grid)
@@ -352,236 +304,273 @@ run_grid_filter_chunk <- function(i, grid_batch) {
   ))
   result
 }
-grid_active <- bind_rows(future_map2(
-  seq_len(n_grid_chunks), grid_filter_batches,
-  run_grid_filter_chunk,
-  .options = furrr_options(seed = NULL)
-))
+
+if (DASYMETRIC_MODE != "cos_only") {
+  grid_active <- bind_rows(future_map2(
+    seq_len(n_grid_chunks), grid_filter_batches,
+    run_grid_filter_chunk,
+    .options = furrr_options(seed = NULL)
+  ))
+} else {
+  grid_active <- bind_rows(lapply(seq_len(n_grid_chunks), function(i) {
+    run_grid_filter_chunk(i, grid_filter_batches[[i]])
+  }))
+}
 rm(grid_filter_batches)
 gc()
 message(sprintf("[grid] Active cells: %d / %d", nrow(grid_active), n_grid_raw))
 
 
-# 7. WEIGHT A: building-volume fragments (chunked + parallel) ------------
-#
-# Step 7a: clip buildings to residential COS zones.
-# Step 7b: intersect grid × clipped buildings × BGRI → volume fragments.
-# Each fragment's frag_volume = building_volume_m3 × (fragment_area / building_footprint_m2).
-# BGRI-level normalisation happens once at the end across all chunks combined.
+# 7. Priority 1: Building-volume fragments -----------------------------------
 
-# -- 7a: residential clip --
+if (DASYMETRIC_MODE %in% c("combined", "all_buildings")) {
+  message(sprintf("[bldg] Processing building-volume weights (mode: %s)...", DASYMETRIC_MODE))
 
-n_bldg_raw <- nrow(buildings)
-n_residential_chunks <- if (TEST_MODE) 1L else ceiling(n_bldg_raw / CHUNK_SIZE)
+  if (DASYMETRIC_MODE == "combined") {
+    # -- 7a: Residential clip --
+    n_bldg_raw <- nrow(buildings)
+    n_residential_chunks <- if (TEST_MODE) 1L else ceiling(n_bldg_raw / CHUNK_SIZE)
 
-residential_batches <- if (TEST_MODE) {
-  list(buildings)
-} else {
-  lapply(seq_len(n_residential_chunks), function(i) {
-    buildings[((i - 1) * CHUNK_SIZE + 1):min(i * CHUNK_SIZE, n_bldg_raw), ]
-  })
-}
+    residential_batches <- if (TEST_MODE) {
+      list(buildings)
+    } else {
+      lapply(seq_len(n_residential_chunks), function(i) {
+        buildings[((i - 1) * CHUNK_SIZE + 1):min(i * CHUNK_SIZE, n_bldg_raw), ]
+      })
+    }
 
-message(sprintf(
-  "[bldg] Clipping %d buildings to COS mask (%d chunks, %d workers)...",
-  n_bldg_raw, n_residential_chunks, N_WORKERS
-))
-run_residential_chunk <- function(i, buildings_batch) {
-  library(sf)
-  ckpt <- sprintf("%s/residential%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
-  cached <- read_checkpoint(ckpt)
-  if (!is.null(cached)) {
     message(sprintf(
-      "[bldg clip %d/%d] checkpoint found (%d buildings)",
-      i, n_residential_chunks, nrow(cached)
+      "[bldg] Clipping %d buildings to COS mask (%d chunks, %d workers)...",
+      n_bldg_raw, n_residential_chunks, N_WORKERS
     ))
-    return(cached)
-  }
-  t0 <- Sys.time()
-  result <- st_intersection(buildings_batch, cos_residential_mask)
-  write_checkpoint(result, ckpt)
-  message(sprintf(
-    "[bldg clip %d/%d] %d -> %d residential fragments (%.1fs)",
-    i, n_residential_chunks, nrow(buildings_batch), nrow(result),
-    as.numeric(difftime(Sys.time(), t0, units = "secs"))
-  ))
-  result
-}
-buildings_residential <- bind_rows(future_map2(
-  seq_len(n_residential_chunks), residential_batches,
-  run_residential_chunk,
-  .options = furrr_options(seed = NULL)
-))
-rm(residential_batches, buildings, cos_residential_mask)
-gc()
-message(sprintf("[bldg] Residential buildings after COS clip: %d", nrow(buildings_residential)))
-
-# -- 7b: fragment intersection --
-
-empty_vol_frags <- tibble(
-  id          = grid_active$id[0],
-  BGRI2021    = census_simple$BGRI2021[0],
-  frag_volume = numeric(0)
-)
-
-n_bldg_res <- nrow(buildings_residential)
-n_chunks <- if (TEST_MODE) 1L else ceiling(n_bldg_res / CHUNK_SIZE)
-
-fragment_batches <- if (TEST_MODE) {
-  list(buildings_residential)
-} else {
-  lapply(seq_len(n_chunks), function(i) {
-    buildings_residential[((i - 1) * CHUNK_SIZE + 1):min(i * CHUNK_SIZE, n_bldg_res), ]
-  })
-}
-
-message(sprintf("[frags] Volume fragments: %d chunks across %d workers...", n_chunks, N_WORKERS))
-t_wall <- Sys.time()
-run_fragment_chunk <- function(i, buildings_batch) {
-  library(sf)
-  library(dplyr)
-  ckpt <- sprintf("%s/vol_fragments%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
-  cached <- read_checkpoint(ckpt)
-  if (!is.null(cached)) {
-    message(sprintf("[frags %d/%d] checkpoint found", i, n_chunks))
-    return(cached)
-  }
-  t0 <- Sys.time()
-  grid_bldg <- st_intersection(grid_active, buildings_batch)
-  result <- if (nrow(grid_bldg) == 0) {
-    empty_vol_frags
+    run_residential_chunk <- function(i, buildings_batch) {
+      library(sf)
+      ckpt <- sprintf("%s/residential%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
+      cached <- read_checkpoint(ckpt)
+      if (!is.null(cached)) {
+        message(sprintf(
+          "[bldg clip %d/%d] checkpoint found (%d buildings)",
+          i, n_residential_chunks, nrow(cached)
+        ))
+        return(cached)
+      }
+      t0 <- Sys.time()
+      result <- st_intersection(buildings_batch, cos_residential_mask)
+      write_checkpoint(result, ckpt)
+      message(sprintf(
+        "[bldg clip %d/%d] %d -> %d residential fragments (%.1fs)",
+        i, n_residential_chunks, nrow(buildings_batch), nrow(result),
+        as.numeric(difftime(Sys.time(), t0, units = "secs"))
+      ))
+      result
+    }
+    buildings_residential <- bind_rows(future_map2(
+      seq_len(n_residential_chunks), residential_batches,
+      run_residential_chunk,
+      .options = furrr_options(seed = NULL)
+    ))
+    rm(residential_batches, buildings, cos_residential_mask)
+    gc()
+    message(sprintf("[bldg] Residential buildings after COS clip: %d", nrow(buildings_residential)))
   } else {
-    frags <- st_intersection(grid_bldg, census_simple)
-    if (nrow(frags) == 0) {
+    # All buildings mode: bypass COS clipping
+    buildings_residential <- buildings
+    rm(buildings)
+    gc()
+  }
+
+  # -- 7b: Fragment intersection --
+  empty_vol_frags <- tibble(
+    id          = grid_active$id[0],
+    BGRI2021    = census_simple$BGRI2021[0],
+    frag_volume = numeric(0)
+  )
+
+  n_bldg_res <- nrow(buildings_residential)
+  n_chunks <- if (TEST_MODE) 1L else ceiling(n_bldg_res / CHUNK_SIZE)
+
+  fragment_batches <- if (TEST_MODE) {
+    list(buildings_residential)
+  } else {
+    lapply(seq_len(n_chunks), function(i) {
+      buildings_residential[((i - 1) * CHUNK_SIZE + 1):min(i * CHUNK_SIZE, n_bldg_res), ]
+    })
+  }
+
+  message(sprintf("[frags] Volume fragments: %d chunks across %d workers...", n_chunks, N_WORKERS))
+  t_wall <- Sys.time()
+  run_fragment_chunk <- function(i, buildings_batch) {
+    library(sf)
+    library(dplyr)
+    ckpt <- sprintf("%s/vol_fragments%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
+    cached <- read_checkpoint(ckpt)
+    if (!is.null(cached)) {
+      message(sprintf("[frags %d/%d] checkpoint found", i, n_chunks))
+      return(cached)
+    }
+    t0 <- Sys.time()
+    grid_bldg <- st_intersection(grid_active, buildings_batch)
+    result <- if (nrow(grid_bldg) == 0) {
       empty_vol_frags
     } else {
-      frags$fragment_area <- as.numeric(st_area(frags))
-      frags |>
-        st_drop_geometry() |>
-        mutate(frag_volume = building_volume_m3 * (fragment_area / building_footprint_m2)) |>
-        select(id, BGRI2021, frag_volume)
+      frags <- st_intersection(grid_bldg, census_simple)
+      if (nrow(frags) == 0) {
+        empty_vol_frags
+      } else {
+        frags$fragment_area <- as.numeric(st_area(frags))
+        frags |>
+          st_drop_geometry() |>
+          mutate(frag_volume = building_volume_m3 * (fragment_area / building_footprint_m2)) |>
+          select(id, BGRI2021, frag_volume)
+      }
     }
+    write_checkpoint(result, ckpt)
+    message(sprintf(
+      "[frags %d/%d] %d buildings -> %d fragments (%.1fs)",
+      i, n_chunks, nrow(buildings_batch), nrow(result),
+      as.numeric(difftime(Sys.time(), t0, units = "secs"))
+    ))
+    result
   }
-  write_checkpoint(result, ckpt)
-  message(sprintf(
-    "[frags %d/%d] %d buildings -> %d fragments (%.1fs)",
-    i, n_chunks, nrow(buildings_batch), nrow(result),
-    as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  vol_frags_raw <- bind_rows(future_map2(
+    seq_len(n_chunks), fragment_batches,
+    run_fragment_chunk,
+    .options = furrr_options(seed = NULL)
   ))
-  result
-}
-vol_frags_raw <- bind_rows(future_map2(
-  seq_len(n_chunks), fragment_batches,
-  run_fragment_chunk,
-  .options = furrr_options(seed = NULL)
-))
-message(sprintf(
-  "[frags] Done in %.1f min",
-  as.numeric(difftime(Sys.time(), t_wall, units = "mins"))
-))
+  message(sprintf(
+    "[frags] Done in %.1f min",
+    as.numeric(difftime(Sys.time(), t_wall, units = "mins"))
+  ))
 
-# Aggregate to (id × BGRI2021) — unnormalised; normalisation happens at step 10.
-vol_weights <- vol_frags_raw |>
-  group_by(id, BGRI2021) |>
-  summarise(vol_weight = sum(frag_volume, na.rm = TRUE), .groups = "drop") |>
-  filter(vol_weight > 0)
-
-message(sprintf("[frags] (id × BGRI) pairs with building volume > 0: %d", nrow(vol_weights)))
-rm(vol_frags_raw, fragment_batches, buildings_residential, empty_vol_frags)
-gc()
-
-
-# 8. WEIGHT B: COS-area fragments ----------------------------------------
-# Not chunked — lighter than the building intersection.
-
-message("[cos] Intersecting grid × COS weighted × BGRI...")
-ckpt_cos <- sprintf("%s/cos_bgri_frags%s.Rds", CHECKPOINT_DIR, run_suffix)
-cos_bgri_frags <- read_checkpoint(ckpt_cos)
-if (is.null(cos_bgri_frags)) {
-  t0 <- Sys.time()
-  grid_cos <- st_intersection(grid_active, cos_weighted)
-  cos_bgri_frags_sf <- st_intersection(grid_cos, census_simple)
-  cos_bgri_frags_sf$frag_area <- as.numeric(st_area(cos_bgri_frags_sf))
-  cos_bgri_frags <- cos_bgri_frags_sf |>
-    st_drop_geometry() |>
-    mutate(cos_area_score = frag_area * cos_weight) |>
+  # Aggregate volume per (id x BGRI2021)
+  vol_weights <- vol_frags_raw |>
     group_by(id, BGRI2021) |>
-    summarise(cos_weight_sum = sum(cos_area_score, na.rm = TRUE), .groups = "drop") |>
-    filter(cos_weight_sum > 0)
-  write_checkpoint(cos_bgri_frags, ckpt_cos)
-  message(sprintf(
-    "[cos] COS weight pairs: %d — %.1f min",
-    nrow(cos_bgri_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
-  ))
-  rm(grid_cos, cos_bgri_frags_sf)
+    summarise(vol_weight = sum(frag_volume, na.rm = TRUE), .groups = "drop") |>
+    filter(vol_weight > 0)
+
+  message(sprintf("[frags] (id × BGRI) pairs with building volume > 0: %d", nrow(vol_weights)))
+  rm(vol_frags_raw, fragment_batches, buildings_residential, empty_vol_frags)
+  gc()
 } else {
-  message(sprintf("[cos] Checkpoint found: %d COS weight pairs", nrow(cos_bgri_frags)))
+  vol_weights <- NULL
 }
-rm(cos_weighted)
-gc()
 
 
-# 9. WEIGHT C: bare BGRI-area fallback -----------------------------------
-# Ensures no BGRI block is ever silently dropped (last resort weight).
+# 8. COS land-use area weights -----------------------------------------------
 
-message("[fallback] Computing bare BGRI-area fallback fragments...")
-ckpt_bgri <- sprintf("%s/bgri_area_frags%s.Rds", CHECKPOINT_DIR, run_suffix)
-bgri_area_frags <- read_checkpoint(ckpt_bgri)
-if (is.null(bgri_area_frags)) {
-  t0 <- Sys.time()
-  bgri_area_frags_sf <- st_intersection(grid_active, census_simple)
-  bgri_area_frags_sf$bare_area <- as.numeric(st_area(bgri_area_frags_sf))
-  bgri_area_frags <- bgri_area_frags_sf |>
-    st_drop_geometry() |>
-    select(id, BGRI2021, bare_area) |>
-    filter(bare_area > 0)
-  write_checkpoint(bgri_area_frags, ckpt_bgri)
-  message(sprintf(
-    "[fallback] Bare-area pairs: %d — %.1f min",
-    nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
-  ))
-  rm(bgri_area_frags_sf)
+if (DASYMETRIC_MODE %in% c("combined", "cos_only")) {
+  message("[cos] Intersecting grid × COS weighted × BGRI...")
+  ckpt_cos <- sprintf("%s/cos_bgri_frags%s.Rds", CHECKPOINT_DIR, run_suffix)
+  cos_bgri_frags <- read_checkpoint(ckpt_cos)
+  if (is.null(cos_bgri_frags)) {
+    t0 <- Sys.time()
+    grid_cos <- st_intersection(grid_active, cos_weighted)
+    cos_bgri_frags_sf <- st_intersection(grid_cos, census_simple)
+    cos_bgri_frags_sf$frag_area <- as.numeric(st_area(cos_bgri_frags_sf))
+    cos_bgri_frags <- cos_bgri_frags_sf |>
+      st_drop_geometry() |>
+      mutate(cos_area_score = frag_area * cos_weight) |>
+      group_by(id, BGRI2021) |>
+      summarise(cos_weight_sum = sum(cos_area_score, na.rm = TRUE), .groups = "drop") |>
+      filter(cos_weight_sum > 0)
+    write_checkpoint(cos_bgri_frags, ckpt_cos)
+    message(sprintf(
+      "[cos] COS weight pairs: %d — %.1f min",
+      nrow(cos_bgri_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
+    ))
+    rm(grid_cos, cos_bgri_frags_sf)
+  } else {
+    message(sprintf("[cos] Checkpoint found: %d COS weight pairs", nrow(cos_bgri_frags)))
+  }
+  rm(cos_weighted)
+  gc()
 } else {
-  message(sprintf("[fallback] Checkpoint found: %d bare-area pairs", nrow(bgri_area_frags)))
+  cos_bgri_frags <- NULL
+}
+
+
+# 9. Bare BGRI area fallback (combined mode only) ----------------------------
+
+if (DASYMETRIC_MODE == "combined") {
+  message("[fallback] Computing bare BGRI-area fallback fragments...")
+  ckpt_bgri <- sprintf("%s/bgri_area_frags%s.Rds", CHECKPOINT_DIR, run_suffix)
+  bgri_area_frags <- read_checkpoint(ckpt_bgri)
+  if (is.null(bgri_area_frags)) {
+    t0 <- Sys.time()
+    bgri_area_frags_sf <- st_intersection(grid_active, census_simple)
+    bgri_area_frags_sf$bare_area <- as.numeric(st_area(bgri_area_frags_sf))
+    bgri_area_frags <- bgri_area_frags_sf |>
+      st_drop_geometry() |>
+      select(id, BGRI2021, bare_area) |>
+      filter(bare_area > 0)
+    write_checkpoint(bgri_area_frags, ckpt_bgri)
+    message(sprintf(
+      "[fallback] Bare-area pairs: %d — %.1f min",
+      nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
+    ))
+    rm(bgri_area_frags_sf)
+  } else {
+    message(sprintf("[fallback] Checkpoint found: %d bare-area pairs", nrow(bgri_area_frags)))
+  }
+} else {
+  bgri_area_frags <- NULL
 }
 rm(grid_active)
 gc()
 
 
-# 10. Combine weights with hierarchical fallback -------------------------
+# 10. Combine / prepare weights ---------------------------------------------
 
-message("[combine] Applying hierarchical fallback...")
+message(sprintf("[weights] Preparing weights (mode: %s)...", DASYMETRIC_MODE))
 
-all_pairs <- bgri_area_frags |>
-  left_join(vol_weights, by = c("id", "BGRI2021")) |>
-  left_join(cos_bgri_frags, by = c("id", "BGRI2021")) |>
-  mutate(
-    weight_source = case_when(
-      !is.na(vol_weight) & vol_weight > 0 ~ "building_volume",
-      !is.na(cos_weight_sum) & cos_weight_sum > 0 ~ "cos_area",
-      TRUE ~ "bare_area"
-    ),
-    weight = case_when(
-      weight_source == "building_volume" ~ vol_weight,
-      weight_source == "cos_area" ~ cos_weight_sum,
-      TRUE ~ bare_area
+if (DASYMETRIC_MODE == "combined") {
+  all_pairs <- bgri_area_frags |>
+    left_join(vol_weights, by = c("id", "BGRI2021")) |>
+    left_join(cos_bgri_frags, by = c("id", "BGRI2021")) |>
+    mutate(
+      weight_source = case_when(
+        !is.na(vol_weight) & vol_weight > 0 ~ "building_volume",
+        !is.na(cos_weight_sum) & cos_weight_sum > 0 ~ "cos_area",
+        TRUE ~ "bare_area"
+      ),
+      weight = case_when(
+        weight_source == "building_volume" ~ vol_weight,
+        weight_source == "cos_area" ~ cos_weight_sum,
+        TRUE ~ bare_area
+      )
     )
-  ) |>
-  filter(weight > 0)
+} else if (DASYMETRIC_MODE == "cos_only") {
+  # COS-only mode: strictly residential COS weights without fallback
+  all_pairs <- cos_bgri_frags |>
+    mutate(
+      weight_source = "cos_area",
+      weight        = cos_weight_sum
+    )
+} else if (DASYMETRIC_MODE == "all_buildings") {
+  # All-buildings mode: strictly building volume without fallback
+  all_pairs <- vol_weights |>
+    mutate(
+      weight_source = "building_volume",
+      weight        = vol_weight
+    )
+}
 
-# Diagnostic: how many pairs came from each source.
+all_pairs <- all_pairs |> filter(weight > 0)
+
 weight_summary <- all_pairs |>
   group_by(weight_source) |>
   summarise(n_pairs = n(), .groups = "drop") |>
   mutate(pct = round(n_pairs / sum(n_pairs) * 100, 1))
-message("[combine] Weight source breakdown:")
+message("[weights] Weight source breakdown:")
 print(as.data.frame(weight_summary))
 
-rm(vol_weights, cos_bgri_frags, bgri_area_frags)
+if (!is.null(vol_weights)) rm(vol_weights)
+if (!is.null(cos_bgri_frags)) rm(cos_bgri_frags)
+if (!is.null(bgri_area_frags)) rm(bgri_area_frags)
 gc()
 
 
-# 11. Distribute population across cells ---------------------------------
+# 11. Distribute population across cells ------------------------------------
 
 message("[pop] Distributing BGRI population across H3 cells...")
 
@@ -631,9 +620,11 @@ rm(fragments_with_pop, all_pairs, demo_cols, census_simple)
 gc()
 
 
-# 12. Join population table to H3 grid geometry --------------------------
+# 12. Join population table to H3 grid geometry -----------------------------
 
-plan(sequential) # release parallel workers
+if (DASYMETRIC_MODE != "cos_only") {
+  plan(sequential) # release parallel workers
+}
 message("[output] Joining population table to H3 grid geometry...")
 
 grid$area_km2 <- as.numeric(st_area(grid)) / 1e6
@@ -666,6 +657,9 @@ grid_final <- grid |>
 
 # 13. Validation ---------------------------------------------------------
 
+# grid_final <- sf::st_read(sprintf("data/base/daysimetric/grid_dasymetric_combined%s.gpkg", run_suffix))
+# census_bgri <- sf::st_read("data/base/daysimetric/BGRI21_170.gpkg")
+
 bgri_total <- sum(census_bgri$N_INDIVIDUOS, na.rm = TRUE)
 grid_total <- sum(grid_final$population, na.rm = TRUE)
 diff_abs <- bgri_total - grid_total
@@ -692,13 +686,14 @@ if (interactive()) {
 }
 
 
-# 14. Export -------------------------------------------------------------
+# 14. Export ----------------------------------------------------------------
 
 out_dir <- "data/base/daysimetric"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-out_gpkg <- file.path(out_dir, sprintf("grid_dasymetric_combined%s.gpkg", run_suffix))
-out_csv <- file.path(out_dir, sprintf("grid_dasymetric_combined%s.csv", run_suffix))
+out_base <- paste0("grid_dasymetric_", DASYMETRIC_MODE, run_suffix)
+out_gpkg <- file.path(out_dir, paste0(out_base, ".gpkg"))
+out_csv  <- file.path(out_dir, paste0(out_base, ".csv"))
 
 sf::st_write(grid_final, out_gpkg, delete_dsn = TRUE)
 write.csv(sf::st_drop_geometry(grid_final), out_csv, row.names = FALSE)
