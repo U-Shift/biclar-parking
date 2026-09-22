@@ -2,7 +2,7 @@
 # 1. Get municipalities with names.
 # 2. Analyse PMUS database (deprecated)
 # 3.1. CRITICAL STEP: Load and standardize OSM data (occasionaly run "bikelanes_00_osm_export.R" to update fetching).
-# 3.2. CRITICAL STEP: Aggregate OSM data based on grid cell by cycleway length (UNFINISHED)
+# 3.2. CRITICAL STEP: Aggregate OSM data based on grid cell by cycleway length.
 # 4. Load and standardize updated data from available municipalities (for now, Cascais, Lisboa, Oeiras, Seixal, Sintra).
 # 5. For the municipalities whose updated data is not available, get data from Biclar (2022).
 # 6. Aggregate data from all municipalities.
