@@ -16,6 +16,7 @@ conversion_dicofre_weight <- read.csv("https://raw.githubusercontent.com/U-Shift
 
 # LMA cycleway network #22 ----------------------------------------------
 cycleways <- sf::st_read("data/base/existing_cycleways/aml_osm_cycleways.gpkg")
+cycleways_grid <- sf::st_read("data/base/existing_cycleways/osm_cycleways_grid.gpkg")
 
 # LMA bicycle parking locations #21 -------------------------------------
 parking <- sf::st_read("data/base/existing_parking/aml_osm_parking.gpkg")
