@@ -87,22 +87,35 @@ aml_osm_cycleways <- aml_osm_cycleways |> rename(municipality = municipio)
 # write_sf(aml_osm_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_osm_cycleways.gpkg")
 
 # 3.2. Aggregate OSM data by grid cell -------------------------------------------------------
-# osm_cycleways_split <- st_intersection(st_transform(aml_osm_cycleways, 4326), grid)
-# osm_cycleways_split$length <- st_length(osm_cycleways_split)
-#
-# length_per_cell <- osm_cycleways_split |>
-#   st_drop_geometry() |>
-#   group_by(gid) |>
-#   summarise(protected_cycleway_length = sum(filter(length, osm_cycleways_split$cycle_segregation == "Cycle track or lane")), na.rm=TRUE) |>
-#   summarise(active_cycleway_length = sum(filter(length, osm_cycleways_split$cycle_segregation == "Protected Active")), na.rm=TRUE) |>
-#   summarise(advisory_cycleway_length = sum(filter(length, osm_cycleways_split$cycle_segregation == "Advisory lane")), na.rm=TRUE) |>
-#   summarise(total_cycleway_length = sum(length), na.rm=TRUE)
-#
-# osm_cycleways_grid <- grid |>
-#   left_join(length_per_cell,by ="gid") |>
-#   mutate(cycleway_length = ifelse(is.na(total_length), 0, total_length))
 
-# write_sf(osm_cycleways_grid, "/data/biclar-parking/base/existing_cycleways/osm_cycleways_grid.gpkg")
+# TEST CODE
+# test_cycleways_split <- st_intersection(st_transform(st_read("/data/biclar-parking/raw/cycling_network/municipalities/Sintra.gpkg"),4326), grid)
+# test_cycleways_split$length <- st_length(test_cycleways_split)
+
+sf::sf_use_s2(FALSE)
+osm_cycleways_split <- st_transform(aml_osm_cycleways, 4326)
+osm_cycleways_split <- st_intersection(osm_cycleways_split, grid)
+osm_cycleways_split$length <- st_length(osm_cycleways_split)
+
+length_per_cell <- osm_cycleways_split |>
+  st_drop_geometry() |>
+  group_by(gid) |>
+  summarise(
+    protected_cycleway_length = sum(length[cycle_segregation == "Cycle track or lane"], na.rm = TRUE),
+    active_cycleway_length = sum(length[cycle_segregation == "Protected Active"], na.rm = TRUE),
+    advisory_cycleway_length = sum(length[cycle_segregation == "Advisory lane"], na.rm = TRUE),
+    total_cycleway_length = sum(length, na.rm = TRUE),
+    .groups="drop"      # maintain df structure
+  )
+
+osm_cycleways_grid <- grid |>
+  left_join(length_per_cell,by ="gid") |>
+  mutate(protected_cycleway_length = ifelse(is.na(protected_cycleway_length), 0, protected_cycleway_length)) |>
+  mutate(active_cycleway_length = ifelse(is.na(active_cycleway_length), 0, active_cycleway_length)) |>
+  mutate(advisory_cycleway_length = ifelse(is.na(advisory_cycleway_length), 0, advisory_cycleway_length)) |>
+  mutate(total_cycleway_length = ifelse(is.na(total_cycleway_length), 0, total_cycleway_length))
+
+#write_sf(osm_cycleways_grid, "/data/biclar-parking/base/existing_cycleways/osm_cycleways_grid.gpkg")
 
 # 4. Updated Municipality Cycleway Data -------------------------------------------------------
 ## 4.1. Get cycleway data for every available municipality ----------------------
