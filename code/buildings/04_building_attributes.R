@@ -4,7 +4,7 @@
 #
 # Run with: $ Rscript code/buildings/04_building_attributes.R > code/buildings/04_building_attributes_$(date +%Y%m%d).log 2>&1
 #
-# TWO COMPLEMENTARY COMPUTATIONS, JOINED BY `id` AT THE END
+# TWO COMPLEMENTARY COMPUTATIONS, JOINED BY `gid` AT THE END
 # ---------------------------------------------------------
 #
 # SECTION 1 - INE Census 2021 BGRI attributes (empirical atlas-weighted disaggregation)
@@ -46,12 +46,12 @@
 #     atlas_straddling_building_count      <- count of fragments from buildings spanning >1 cell
 #
 # COMBINE
-#   Left-join Section 1 and Section 2 onto the FULL grid by `id`. Cells with no
+#   Left-join Section 1 and Section 2 onto the FULL grid by `gid`. Cells with no
 #   buildings still appear: count/volume columns -> 0, floor averages / pct -> NA.
 #
 # OUTPUT
 #   data/base/daysimetric/grid_building_attributes[_test_<municipio>].gpkg + .csv
-#   one row per grid `id` (exported in EPSG:4326 for web/GIS compatibility).
+#   one row per grid `gid` (exported in EPSG:4326 for web/GIS compatibility).
 
 # 0. Setup -------------------------------------------------------------------
 
@@ -143,20 +143,13 @@ message(sprintf("[load] Buildings: %d footprints", nrow(buildings)))
 require_cols(buildings, c("volume_m3", "est_floors"), "lisbon_metro_buildings_footprints.geojson")
 
 # Keep only needed columns and drop dataset-specific identifiers like 'id'
-# to prevent column collisions with grid$id during spatial intersections
+# to prevent column collisions with grid$gid during spatial intersections
 buildings <- buildings |>
   select(any_of(c("volume_m3", "est_floors", "footprint_m2", "height")))
 
 message("[grid] Loading H3 grid from data/geo/grid.gpkg...")
 grid <- sf::st_read("data/geo/grid.gpkg", quiet = TRUE) |> st_make_valid()
-if ("gid" %in% names(grid)) {
-  grid <- grid |> rename(id = gid)
-} else if (!"id" %in% names(grid)) {
-  id_col <- setdiff(names(grid), attr(grid, "sf_column"))[1]
-  warning(sprintf("Grid has no 'gid' or 'id' column - using '%s'. Check names(grid).", id_col))
-  grid <- grid |> rename(id = !!id_col)
-}
-grid$id <- as.integer(grid$id)
+grid$gid <- as.integer(grid$gid)
 message(sprintf("[grid] Grid loaded: %d cells", nrow(grid)))
 
 # Municipalities - needed only for TEST_MODE subsetting
@@ -236,7 +229,7 @@ if (TEST_MODE) {
 #
 # This single unified pass produces all fragments required for BOTH Section 1 and Section 2.
 
-grid_slim <- grid |> select(id)
+grid_slim <- grid |> select(gid)
 bgri_slim <- census_bgri |> select(BGRI2021)
 
 n_bldg <- nrow(buildings)
@@ -264,7 +257,7 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
 
   empty_frags_tibble <- function() {
     tibble(
-      id                  = integer(0),
+      gid                 = integer(0),
       BGRI2021            = character(0),
       frag_volume_m3      = numeric(0),
       frag_footprint_m2   = numeric(0),
@@ -282,7 +275,7 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
   idx_single <- which(n_hits_grid == 1)
   if (length(idx_single) > 0) {
     bldgs_single <- bldg_batch[idx_single, ]
-    cell_ids_single <- grid_slim$id[unlist(hits_grid[idx_single])]
+    cell_ids_single <- grid_slim$gid[unlist(hits_grid[idx_single])]
 
     # Find containing BGRI block via representative interior point
     cents_single <- suppressWarnings(st_point_on_surface(st_geometry(bldgs_single)))
@@ -300,7 +293,7 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
     }
 
     out_single <- tibble(
-      id                  = as.integer(cell_ids_single),
+      gid                 = as.integer(cell_ids_single),
       BGRI2021            = as.character(bgri_slim$BGRI2021[bgri_pos_single]),
       frag_volume_m3      = as.numeric(bldgs_single$volume_m3),
       frag_footprint_m2   = as.numeric(bldgs_single$footprint_m2),
@@ -344,7 +337,7 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
       }
 
       out_multi <- tibble(
-        id                  = as.integer(frags$id),
+        gid                 = as.integer(frags$gid),
         BGRI2021            = as.character(bgri_slim$BGRI2021[bgri_pos_multi]),
         frag_volume_m3      = as.numeric(frags$volume_m3) * frags$area_ratio,
         frag_footprint_m2   = as.numeric(frags$frag_area),
@@ -399,8 +392,8 @@ message(sprintf(
 message("[s2] Aggregating Building Atlas metrics per grid cell...")
 
 s2_grid <- all_fragments |>
-  filter(!is.na(id)) |>
-  group_by(id) |>
+  filter(!is.na(gid)) |>
+  group_by(gid) |>
   summarise(
     atlas_building_count = sum(frag_building_count, na.rm = TRUE),
     atlas_total_volume_m3 = sum(frag_volume_m3, na.rm = TRUE),
@@ -432,7 +425,7 @@ message(sprintf("[s2] Section 2 done: %d grid cells contain >=1 building", nrow(
 
 # 6. Build empirical disaggregation weights from Atlas fragments --------------
 #
-# Weights per (id x BGRI2021):
+# Weights per (gid x BGRI2021):
 #   - Buildings: weight_footprint = sum(frag_footprint_m2)
 #   - Dwellings: weight_volume    = sum(frag_volume_m3)
 # Fallback for BGRIs with 0 Atlas footprints: geometric overlap area (m2 in EPSG:3763).
@@ -440,8 +433,8 @@ message(sprintf("[s2] Section 2 done: %d grid cells contain >=1 building", nrow(
 message("[s1] Building empirical weights from Global Building Atlas footprints...")
 
 frag_weights <- all_fragments |>
-  filter(!is.na(id) & !is.na(BGRI2021)) |>
-  group_by(id, BGRI2021) |>
+  filter(!is.na(gid) & !is.na(BGRI2021)) |>
+  group_by(gid, BGRI2021) |>
   summarise(
     weight_footprint = sum(frag_footprint_m2, na.rm = TRUE),
     weight_volume = sum(frag_volume_m3, na.rm = TRUE),
@@ -471,7 +464,7 @@ if (length(missing_bgris) > 0) {
       st_drop_geometry() |>
       filter(bare_area > 0) |>
       transmute(
-        id,
+        gid,
         BGRI2021,
         weight_footprint = bare_area,
         weight_volume    = bare_area,
@@ -504,10 +497,10 @@ dwell_splits <- all_weights |>
   mutate(frac_dwelling = weight_volume / total_bgri_vol)
 
 all_splits <- bldg_splits |>
-  select(id, BGRI2021, frac_building, weight_source, weight_footprint) |>
+  select(gid, BGRI2021, frac_building, weight_source, weight_footprint) |>
   left_join(
-    dwell_splits |> select(id, BGRI2021, frac_dwelling),
-    by = c("id", "BGRI2021")
+    dwell_splits |> select(gid, BGRI2021, frac_dwelling),
+    by = c("gid", "BGRI2021")
   ) |>
   mutate(frac_dwelling = coalesce(frac_dwelling, frac_building))
 
@@ -557,7 +550,7 @@ s1_grid <- all_splits |>
     census_dwellings_with_parking          = census_dwellings_with_parking * frac_dwelling,
     census_dwellings_wheelchair_accessible = census_dwellings_wheelchair_accessible * frac_dwelling
   ) |>
-  group_by(id) |>
+  group_by(gid) |>
   summarise(
     across(all_of(distribute_cols), ~ sum(.x, na.rm = TRUE)),
     census_weight_source = weight_source[which.max(weight_footprint)],
@@ -580,9 +573,9 @@ plan(sequential) # release parallel workers
 message("[combine] Joining Section 1 + Section 2 onto the full grid...")
 
 grid_out <- grid |>
-  select(id) |>
-  left_join(s1_grid, by = "id") |>
-  left_join(s2_grid, by = "id") |>
+  select(gid) |>
+  left_join(s1_grid, by = "gid") |>
+  left_join(s2_grid, by = "gid") |>
   mutate(
     across(all_of(distribute_cols), ~ replace_na(.x, 0)),
     atlas_building_count = replace_na(atlas_building_count, 0),
@@ -616,7 +609,7 @@ grid_out <- grid |>
     atlas_weighted_mean_estimated_floors = round(atlas_weighted_mean_estimated_floors, 2)
   ) |>
   select(
-    id,
+    gid,
     # Census classical buildings
     census_buildings_1_2_floors, census_buildings_3plus_floors,
     census_buildings_pre1945, census_buildings_post1945,
