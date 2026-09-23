@@ -4,14 +4,18 @@
 grid_gbfs_bikes <- read.csv("data/analysis/gbfs/grid_bikes_all_0-24.csv")
 
 # Bike thefts #14
-grid_stolen = read.csv("data/analysis/stolen/stolen_bikes_grid.csv")
+grid_stolen <- read.csv("data/analysis/stolen/stolen_bikes_grid.csv")
 
 # Ticketing data #23
-grid_ticketing_global = read.csv("data/analysis/ticketing/grid_ticketing_global.csv")
-grid_ticketing_interfaces = read.csv("data/analysis/ticketing/grid_ticketing_interfaces.csv")
+grid_ticketing_global <- read.csv("data/analysis/ticketing/grid_ticketing_global.csv")
+grid_ticketing_interfaces <- read.csv("data/analysis/ticketing/grid_ticketing_interfaces.csv")
 
 # Dasymetric population map (COS + Global Building Atlas combined) #20 (03_dasymetric_combined.R)
-grid_dasymetric = read.csv("data/base/daysimetric/grid_dasymetric_combined.csv")
+grid_dasymetric <- read.csv("data/base/daysimetric/grid_dasymetric_combined.csv")
 
 # Dasymetric building map (Censos BGRI + Global Building Atlas combined) #30 (04_building_attributes.R)
-grid_dasymetric_buildings = read.csv("data/base/daysimetric/grid_building_attributes.csv")
+grid_dasymetric_buildings <- read.csv("data/base/daysimetric/grid_building_attributes.csv")
+
+# POIS
+# Schools #37
+grid_pois_schools <- read.csv("data/base/pois/grid_schools_students.csv")
