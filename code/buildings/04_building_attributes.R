@@ -60,6 +60,7 @@ missing_packages <- setdiff(required_packages, rownames(installed.packages()))
 if (length(missing_packages) > 0) install.packages(missing_packages)
 
 library(sf)
+sf_use_s2(FALSE)
 library(dplyr)
 library(tidyr)
 library(tibble)
@@ -141,6 +142,11 @@ buildings <- sf::st_read(
 message(sprintf("[load] Buildings: %d footprints", nrow(buildings)))
 require_cols(buildings, c("volume_m3", "est_floors"), "lisbon_metro_buildings_footprints.geojson")
 
+# Keep only needed columns and drop dataset-specific identifiers like 'id'
+# to prevent column collisions with grid$id during spatial intersections
+buildings <- buildings |>
+  select(any_of(c("volume_m3", "est_floors", "footprint_m2")))
+
 message("[grid] Loading H3 grid from data/geo/grid.gpkg...")
 grid <- sf::st_read("data/geo/grid.gpkg", quiet = TRUE) |> st_make_valid()
 if ("gid" %in% names(grid)) {
@@ -150,6 +156,7 @@ if ("gid" %in% names(grid)) {
   warning(sprintf("Grid has no 'gid' or 'id' column - using '%s'. Check names(grid).", id_col))
   grid <- grid |> rename(id = !!id_col)
 }
+grid$id <- as.integer(grid$id)
 message(sprintf("[grid] Grid loaded: %d cells", nrow(grid)))
 
 # Municipalities - needed only for TEST_MODE subsetting
@@ -167,7 +174,21 @@ if (!"municipio" %in% names(municipalities_sf) && file.exists("useful_data/munic
 }
 
 
-# 2. TEST MODE subsetting ----------------------------------------------------
+# 2. Reproject to EPSG:3763 (Metric CRS for Portugal) -------------------------
+
+message("[prep] Reprojecting all layers to EPSG:3763...")
+grid <- st_transform(grid, target_crs) |> st_make_valid()
+census_bgri <- st_transform(census_bgri, target_crs) |> st_make_valid()
+buildings <- st_transform(buildings, target_crs) |> st_make_valid()
+
+# Ensure footprint_m2 is accurately computed in metric units (m2)
+if (!"footprint_m2" %in% names(buildings)) {
+  message("[prep] Computing footprint_m2 in EPSG:3763...")
+  buildings$footprint_m2 <- as.numeric(st_area(buildings))
+}
+
+
+# 3. TEST MODE subsetting ----------------------------------------------------
 
 if (TEST_MODE) {
   message(sprintf("[TEST MODE] Subsetting to municipality: %s", TEST_MUNICIPIO))
@@ -181,31 +202,17 @@ if (TEST_MODE) {
   }
   test_boundary <- municipalities_sf |>
     filter(municipio == TEST_MUNICIPIO) |>
+    st_transform(target_crs) |>
     st_make_valid()
   stopifnot(nrow(test_boundary) == 1)
 
-  ref_crs <- st_crs(test_boundary)
-  grid <- st_transform(grid, ref_crs)[test_boundary, ]
-  buildings <- st_transform(buildings, ref_crs)[test_boundary, ]
-  census_bgri <- st_transform(census_bgri, ref_crs)[test_boundary, ]
+  grid <- grid[test_boundary, ]
+  buildings <- buildings[test_boundary, ]
+  census_bgri <- census_bgri[test_boundary, ]
   message(sprintf(
     "[TEST MODE] Subset: %d grid cells, %d buildings, %d BGRI blocks",
     nrow(grid), nrow(buildings), nrow(census_bgri)
   ))
-}
-
-
-# 3. Reproject to EPSG:3763 (Metric CRS for Portugal) -------------------------
-
-message("[prep] Reprojecting all layers to EPSG:3763...")
-grid <- st_transform(grid, target_crs) |> st_make_valid()
-census_bgri <- st_transform(census_bgri, target_crs) |> st_make_valid()
-buildings <- st_transform(buildings, target_crs) |> st_make_valid()
-
-# Ensure footprint_m2 is accurately computed in metric units (m2)
-if (!"footprint_m2" %in% names(buildings)) {
-  message("[prep] Computing footprint_m2 in EPSG:3763...")
-  buildings$footprint_m2 <- as.numeric(st_area(buildings))
 }
 
 
@@ -242,10 +249,23 @@ message(sprintf(
 
 run_unified_bldg_chunk <- function(i, bldg_batch) {
   library(sf)
+  sf_use_s2(FALSE)
   library(dplyr)
   library(tibble)
 
   t0 <- Sys.time()
+
+  empty_frags_tibble <- function() {
+    tibble(
+      id                  = integer(0),
+      BGRI2021            = character(0),
+      frag_volume_m3      = numeric(0),
+      frag_footprint_m2   = numeric(0),
+      frag_building_count = numeric(0),
+      est_floors          = numeric(0),
+      spans_multi         = logical(0)
+    )
+  }
 
   # 1. Spatial intersection against H3 grid
   hits_grid <- st_intersects(bldg_batch, grid_slim)
@@ -273,8 +293,8 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
     }
 
     out_single <- tibble(
-      id                  = cell_ids_single,
-      BGRI2021            = bgri_slim$BGRI2021[bgri_pos_single],
+      id                  = as.integer(cell_ids_single),
+      BGRI2021            = as.character(bgri_slim$BGRI2021[bgri_pos_single]),
       frag_volume_m3      = as.numeric(bldgs_single$volume_m3),
       frag_footprint_m2   = as.numeric(bldgs_single$footprint_m2),
       frag_building_count = 1.0,
@@ -282,7 +302,7 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
       spans_multi         = FALSE
     )
   } else {
-    out_single <- tibble()
+    out_single <- empty_frags_tibble()
   }
 
   # B. Buildings spanning multiple cells (slice proportionally in EPSG:3763)
@@ -295,6 +315,11 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
 
     if (nrow(frags) > 0) {
       frags$frag_area <- as.numeric(st_area(frags)) # metric m2 in EPSG:3763
+      # Discard degenerate zero-area intersections (e.g. touches on boundary edge or point)
+      frags <- frags[!st_is_empty(frags) & frags$frag_area > 0.001, ]
+    }
+
+    if (nrow(frags) > 0) {
       frags$orig_footprint <- pmax(as.numeric(frags$footprint_m2), frags$frag_area, 1e-6)
       frags$area_ratio <- pmin(1.0, frags$frag_area / frags$orig_footprint)
 
@@ -312,19 +337,19 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
       }
 
       out_multi <- tibble(
-        id                  = frags$id,
-        BGRI2021            = bgri_slim$BGRI2021[bgri_pos_multi],
+        id                  = as.integer(frags$id),
+        BGRI2021            = as.character(bgri_slim$BGRI2021[bgri_pos_multi]),
         frag_volume_m3      = as.numeric(frags$volume_m3) * frags$area_ratio,
-        frag_footprint_m2   = frags$frag_area,
+        frag_footprint_m2   = as.numeric(frags$frag_area),
         frag_building_count = 1.0 * frags$area_ratio,
         est_floors          = as.numeric(frags$est_floors),
         spans_multi         = TRUE
       )
     } else {
-      out_multi <- tibble()
+      out_multi <- empty_frags_tibble()
     }
   } else {
-    out_multi <- tibble()
+    out_multi <- empty_frags_tibble()
   }
 
   out <- bind_rows(out_single, out_multi)
