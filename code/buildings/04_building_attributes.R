@@ -60,7 +60,6 @@ missing_packages <- setdiff(required_packages, rownames(installed.packages()))
 if (length(missing_packages) > 0) install.packages(missing_packages)
 
 library(sf)
-sf_use_s2(FALSE)
 library(dplyr)
 library(tidyr)
 library(tibble)
@@ -249,7 +248,6 @@ message(sprintf(
 
 run_unified_bldg_chunk <- function(i, bldg_batch) {
   library(sf)
-  sf_use_s2(FALSE)
   library(dplyr)
   library(tibble)
 
