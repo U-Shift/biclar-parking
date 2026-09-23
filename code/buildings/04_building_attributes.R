@@ -40,6 +40,7 @@
 #     atlas_building_count                 <- sum of building presence (1.0 if inside, fractional if split)
 #     atlas_total_volume_m3                <- sum of volume proportional to area in cell
 #     atlas_total_footprint_m2             <- sum of footprint area inside cell (m2)
+#     atlas_total_floor_area_m2            <- sum of total gross floor area inside cell (m2, footprint_m2 * est_floors)
 #     atlas_total_floors                   <- sum of estimated floors (proportional to building presence)
 #     atlas_mean_estimated_floors          <- arithmetic mean of estimated floors
 #     atlas_weighted_mean_estimated_floors <- footprint-area-weighted mean of estimated floors
@@ -259,6 +260,7 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
       BGRI2021            = character(0),
       frag_volume_m3      = numeric(0),
       frag_footprint_m2   = numeric(0),
+      frag_floor_area_m2  = numeric(0),
       frag_building_count = numeric(0),
       est_floors          = numeric(0),
       spans_multi         = logical(0)
@@ -295,6 +297,7 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
       BGRI2021            = as.character(bgri_slim$BGRI2021[bgri_pos_single]),
       frag_volume_m3      = as.numeric(bldgs_single$volume_m3),
       frag_footprint_m2   = as.numeric(bldgs_single$footprint_m2),
+      frag_floor_area_m2  = as.numeric(bldgs_single$footprint_m2) * as.numeric(bldgs_single$est_floors),
       frag_building_count = 1.0,
       est_floors          = as.numeric(bldgs_single$est_floors),
       spans_multi         = FALSE
@@ -339,6 +342,7 @@ run_unified_bldg_chunk <- function(i, bldg_batch) {
         BGRI2021            = as.character(bgri_slim$BGRI2021[bgri_pos_multi]),
         frag_volume_m3      = as.numeric(frags$volume_m3) * frags$area_ratio,
         frag_footprint_m2   = as.numeric(frags$frag_area),
+        frag_floor_area_m2  = as.numeric(frags$frag_area) * as.numeric(frags$est_floors),
         frag_building_count = 1.0 * frags$area_ratio,
         est_floors          = as.numeric(frags$est_floors),
         spans_multi         = TRUE
@@ -372,6 +376,7 @@ gc()
 total_assigned_count <- sum(all_fragments$frag_building_count, na.rm = TRUE)
 total_assigned_vol <- sum(all_fragments$frag_volume_m3, na.rm = TRUE)
 total_assigned_area <- sum(all_fragments$frag_footprint_m2, na.rm = TRUE)
+total_assigned_floor_area <- sum(all_fragments$frag_floor_area_m2, na.rm = TRUE)
 
 message(sprintf(
   "[alloc] Unified fragments ready: %s fragments, representing %s buildings in AML (%.1f%% of dataset)",
@@ -396,6 +401,7 @@ s2_grid <- all_fragments |>
     atlas_building_count = sum(frag_building_count, na.rm = TRUE),
     atlas_total_volume_m3 = sum(frag_volume_m3, na.rm = TRUE),
     atlas_total_footprint_m2 = sum(frag_footprint_m2, na.rm = TRUE),
+    atlas_total_floor_area_m2 = sum(frag_floor_area_m2, na.rm = TRUE),
     atlas_total_floors = sum(est_floors * frag_building_count, na.rm = TRUE),
     atlas_mean_estimated_floors = mean(est_floors, na.rm = TRUE),
     atlas_weighted_mean_estimated_floors = sum(est_floors * frag_footprint_m2, na.rm = TRUE) /
@@ -579,6 +585,7 @@ grid_out <- grid |>
     atlas_building_count = replace_na(atlas_building_count, 0),
     atlas_total_volume_m3 = replace_na(atlas_total_volume_m3, 0),
     atlas_total_footprint_m2 = replace_na(atlas_total_footprint_m2, 0),
+    atlas_total_floor_area_m2 = replace_na(atlas_total_floor_area_m2, 0),
     atlas_total_floors = replace_na(atlas_total_floors, 0),
     atlas_straddling_building_count = replace_na(atlas_straddling_building_count, 0L),
     census_pct_residential = if_else(
@@ -602,6 +609,7 @@ grid_out <- grid |>
     atlas_building_count                 = round(atlas_building_count, 2),
     atlas_total_volume_m3                = round(atlas_total_volume_m3, 1),
     atlas_total_footprint_m2             = round(atlas_total_footprint_m2, 1),
+    atlas_total_floor_area_m2            = round(atlas_total_floor_area_m2, 1),
     atlas_total_floors                   = round(atlas_total_floors, 1),
     atlas_mean_estimated_floors          = round(atlas_mean_estimated_floors, 2),
     atlas_weighted_mean_estimated_floors = round(atlas_weighted_mean_estimated_floors, 2)
@@ -621,7 +629,7 @@ grid_out <- grid |>
     census_weight_source,
     # Global Building Atlas physical footprints
     atlas_building_count, atlas_total_volume_m3, atlas_total_footprint_m2,
-    atlas_total_floors,
+    atlas_total_floor_area_m2, atlas_total_floors,
     atlas_mean_estimated_floors, atlas_weighted_mean_estimated_floors,
     atlas_straddling_building_count
   ) |>
@@ -653,10 +661,11 @@ if (nrow(over) > 0) {
 }
 
 message(sprintf(
-  "[s2] Section 2 conservation: %s buildings, %s m3 volume, %s m2 footprint allocated to grid.",
+  "[s2] Section 2 conservation: %s buildings, %s m3 volume, %s m2 footprint, %s m2 floor area allocated to grid.",
   format(round(total_assigned_count), big.mark = ","),
   format(round(total_assigned_vol), big.mark = ","),
-  format(round(total_assigned_area), big.mark = ",")
+  format(round(total_assigned_area), big.mark = ","),
+  format(round(total_assigned_floor_area), big.mark = ",")
 ))
 
 
