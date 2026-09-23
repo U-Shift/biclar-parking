@@ -2,8 +2,8 @@ source("code/00_data_load.R")
 source("code/00_helpers.R")
 
 # Raw data aggregation --------------------------------------------------------------------------
-BASE_FOLDER <- "data/collection/gbfs_compressed"
-OUTPUT_FOLDER <- "data/analysis/gbfs_compressed"
+BASE_FOLDER <- "data/collection/gbfs"
+OUTPUT_FOLDER <- "data/analysis/gbfs"
 DATE_START <- 20260827
 DATE_END <- 20260902
 

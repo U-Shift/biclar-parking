@@ -6,13 +6,13 @@
 # To validate: $ crontab -l
 
 BASE_FOLDERS <- c(
-    "data/collection/gbfs_compressed/bird_lisboa",
-    "data/collection/gbfs_compressed/bird_cascais",
-    "data/collection/gbfs_compressed/bird_almada",
-    "data/collection/gbfs_compressed/lime_almada",
-    "data/collection/gbfs_compressed/lime_lisboa",
-    "data/collection/gbfs_compressed/lime_oeiras",
-    "data/collection/gbfs_compressed/emel_gira"
+    "data/collection/gbfs/bird_lisboa",
+    "data/collection/gbfs/bird_cascais",
+    "data/collection/gbfs/bird_almada",
+    "data/collection/gbfs/lime_almada",
+    "data/collection/gbfs/lime_lisboa",
+    "data/collection/gbfs/lime_oeiras",
+    "data/collection/gbfs/emel_gira"
 )
 
 today_str <- format(Sys.Date(), "%Y%m%d")
