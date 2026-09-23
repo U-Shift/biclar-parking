@@ -87,9 +87,8 @@ aml_osm_cycleways <- aml_osm_cycleways |> rename(municipality = municipio)
 # write_sf(aml_osm_cycleways, "/data/biclar-parking/base/existing_cycleways/aml_osm_cycleways.gpkg")
 
 # 3.2. Aggregate OSM data by grid cell -------------------------------------------------------
-sf::sf_use_s2(FALSE) #remove spherical geometry (this was causing the next code to take too much time to run)
-osm_cycleways_split <- st_transform(aml_osm_cycleways, 4326)
-osm_cycleways_split <- st_intersection(osm_cycleways_split, grid)
+osm_cycleways_split <- st_transform(aml_osm_cycleways, 3763)
+osm_cycleways_split <- st_intersection(osm_cycleways_split, st_transform(grid, 3763))
 osm_cycleways_split$length <- st_length(osm_cycleways_split)
 
 length_per_cell <- osm_cycleways_split |>
