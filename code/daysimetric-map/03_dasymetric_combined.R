@@ -70,36 +70,8 @@ TEST_MUNICIPIO <- "Oeiras" # must match a 'municipio' name in useful_data/munici
 # Number of building rows processed per parallel chunk
 CHUNK_SIZE <- 50000
 
-# Local checkpoint directory (specific to mode so checkpoints never clash)
-CHECKPOINT_DIR <- file.path(getwd(), "checkpoints", paste0("dasymetric_", DASYMETRIC_MODE))
-
 # Suffix for test runs
 run_suffix <- if (TEST_MODE) paste0("_test_", tolower(TEST_MUNICIPIO)) else ""
-
-if (!dir.create(CHECKPOINT_DIR, recursive = TRUE, showWarnings = TRUE)) {
-  if (!dir.exists(CHECKPOINT_DIR)) {
-    stop(sprintf(
-      "Cannot create checkpoint directory:\n  %s\nCheck write permissions.",
-      CHECKPOINT_DIR
-    ))
-  }
-  message(sprintf("[checkpoints] Resuming from existing directory: %s", CHECKPOINT_DIR))
-} else {
-  message(sprintf("[checkpoints] Created: %s", CHECKPOINT_DIR))
-}
-
-# Checkpoint helpers
-read_checkpoint <- function(path) {
-  if (!file.exists(path)) {
-    return(NULL)
-  }
-  tryCatch(readRDS(path), error = function(e) NULL)
-}
-
-write_checkpoint <- function(object, path) {
-  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-  saveRDS(object, path)
-}
 
 
 # 1. Load data ---------------------------------------------------------------
@@ -287,16 +259,9 @@ grid_filter_batches <- if (TEST_MODE) {
 
 run_grid_filter_chunk <- function(i, grid_batch) {
   library(sf)
-  ckpt <- sprintf("%s/grid_active%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
-  cached <- read_checkpoint(ckpt)
-  if (!is.null(cached)) {
-    message(sprintf("[grid filter %d/%d] checkpoint found", i, n_grid_chunks))
-    return(cached)
-  }
   t0 <- Sys.time()
   hits <- st_intersects(grid_batch, census_bgri, sparse = TRUE)
   result <- grid_batch[lengths(hits) > 0, ]
-  write_checkpoint(result, ckpt)
   message(sprintf(
     "[grid filter %d/%d] %d -> %d active cells (%.1fs)",
     i, n_grid_chunks, nrow(grid_batch), nrow(result),
@@ -345,18 +310,8 @@ if (DASYMETRIC_MODE %in% c("combined", "all_buildings")) {
     ))
     run_residential_chunk <- function(i, buildings_batch) {
       library(sf)
-      ckpt <- sprintf("%s/residential%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
-      cached <- read_checkpoint(ckpt)
-      if (!is.null(cached)) {
-        message(sprintf(
-          "[bldg clip %d/%d] checkpoint found (%d buildings)",
-          i, n_residential_chunks, nrow(cached)
-        ))
-        return(cached)
-      }
       t0 <- Sys.time()
       result <- st_intersection(buildings_batch, cos_residential_mask)
-      write_checkpoint(result, ckpt)
       message(sprintf(
         "[bldg clip %d/%d] %d -> %d residential fragments (%.1fs)",
         i, n_residential_chunks, nrow(buildings_batch), nrow(result),
@@ -402,12 +357,6 @@ if (DASYMETRIC_MODE %in% c("combined", "all_buildings")) {
   run_fragment_chunk <- function(i, buildings_batch) {
     library(sf)
     library(dplyr)
-    ckpt <- sprintf("%s/vol_fragments%s_%03d.Rds", CHECKPOINT_DIR, run_suffix, i)
-    cached <- read_checkpoint(ckpt)
-    if (!is.null(cached)) {
-      message(sprintf("[frags %d/%d] checkpoint found", i, n_chunks))
-      return(cached)
-    }
     t0 <- Sys.time()
     grid_bldg <- st_intersection(grid_active, buildings_batch)
     result <- if (nrow(grid_bldg) == 0) {
@@ -424,7 +373,6 @@ if (DASYMETRIC_MODE %in% c("combined", "all_buildings")) {
           select(id, BGRI2021, frag_volume)
       }
     }
-    write_checkpoint(result, ckpt)
     message(sprintf(
       "[frags %d/%d] %d buildings -> %d fragments (%.1fs)",
       i, n_chunks, nrow(buildings_batch), nrow(result),
@@ -460,29 +408,21 @@ if (DASYMETRIC_MODE %in% c("combined", "all_buildings")) {
 
 if (DASYMETRIC_MODE %in% c("combined", "cos_only")) {
   message("[cos] Intersecting grid × COS weighted × BGRI...")
-  ckpt_cos <- sprintf("%s/cos_bgri_frags%s.Rds", CHECKPOINT_DIR, run_suffix)
-  cos_bgri_frags <- read_checkpoint(ckpt_cos)
-  if (is.null(cos_bgri_frags)) {
-    t0 <- Sys.time()
-    grid_cos <- st_intersection(grid_active, cos_weighted)
-    cos_bgri_frags_sf <- st_intersection(grid_cos, census_simple)
-    cos_bgri_frags_sf$frag_area <- as.numeric(st_area(cos_bgri_frags_sf))
-    cos_bgri_frags <- cos_bgri_frags_sf |>
-      st_drop_geometry() |>
-      mutate(cos_area_score = frag_area * cos_weight) |>
-      group_by(id, BGRI2021) |>
-      summarise(cos_weight_sum = sum(cos_area_score, na.rm = TRUE), .groups = "drop") |>
-      filter(cos_weight_sum > 0)
-    write_checkpoint(cos_bgri_frags, ckpt_cos)
-    message(sprintf(
-      "[cos] COS weight pairs: %d — %.1f min",
-      nrow(cos_bgri_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
-    ))
-    rm(grid_cos, cos_bgri_frags_sf)
-  } else {
-    message(sprintf("[cos] Checkpoint found: %d COS weight pairs", nrow(cos_bgri_frags)))
-  }
-  rm(cos_weighted)
+  t0 <- Sys.time()
+  grid_cos <- st_intersection(grid_active, cos_weighted)
+  cos_bgri_frags_sf <- st_intersection(grid_cos, census_simple)
+  cos_bgri_frags_sf$frag_area <- as.numeric(st_area(cos_bgri_frags_sf))
+  cos_bgri_frags <- cos_bgri_frags_sf |>
+    st_drop_geometry() |>
+    mutate(cos_area_score = frag_area * cos_weight) |>
+    group_by(id, BGRI2021) |>
+    summarise(cos_weight_sum = sum(cos_area_score, na.rm = TRUE), .groups = "drop") |>
+    filter(cos_weight_sum > 0)
+  message(sprintf(
+    "[cos] COS weight pairs: %d — %.1f min",
+    nrow(cos_bgri_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
+  ))
+  rm(grid_cos, cos_bgri_frags_sf, cos_weighted)
   gc()
 } else {
   cos_bgri_frags <- NULL
@@ -493,25 +433,18 @@ if (DASYMETRIC_MODE %in% c("combined", "cos_only")) {
 
 if (DASYMETRIC_MODE == "combined") {
   message("[fallback] Computing bare BGRI-area fallback fragments...")
-  ckpt_bgri <- sprintf("%s/bgri_area_frags%s.Rds", CHECKPOINT_DIR, run_suffix)
-  bgri_area_frags <- read_checkpoint(ckpt_bgri)
-  if (is.null(bgri_area_frags)) {
-    t0 <- Sys.time()
-    bgri_area_frags_sf <- st_intersection(grid_active, census_simple)
-    bgri_area_frags_sf$bare_area <- as.numeric(st_area(bgri_area_frags_sf))
-    bgri_area_frags <- bgri_area_frags_sf |>
-      st_drop_geometry() |>
-      select(id, BGRI2021, bare_area) |>
-      filter(bare_area > 0)
-    write_checkpoint(bgri_area_frags, ckpt_bgri)
-    message(sprintf(
-      "[fallback] Bare-area pairs: %d — %.1f min",
-      nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
-    ))
-    rm(bgri_area_frags_sf)
-  } else {
-    message(sprintf("[fallback] Checkpoint found: %d bare-area pairs", nrow(bgri_area_frags)))
-  }
+  t0 <- Sys.time()
+  bgri_area_frags_sf <- st_intersection(grid_active, census_simple)
+  bgri_area_frags_sf$bare_area <- as.numeric(st_area(bgri_area_frags_sf))
+  bgri_area_frags <- bgri_area_frags_sf |>
+    st_drop_geometry() |>
+    select(id, BGRI2021, bare_area) |>
+    filter(bare_area > 0)
+  message(sprintf(
+    "[fallback] Bare-area pairs: %d — %.1f min",
+    nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
+  ))
+  rm(bgri_area_frags_sf)
 } else {
   bgri_area_frags <- NULL
 }
