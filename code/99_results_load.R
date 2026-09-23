@@ -10,11 +10,8 @@ grid_stolen = read.csv("data/analysis/stolen/stolen_bikes_grid.csv")
 grid_ticketing_global = read.csv("data/analysis/ticketing/grid_ticketing_global.csv")
 grid_ticketing_interfaces = read.csv("data/analysis/ticketing/grid_ticketing_interfaces.csv")
 
-# Dasymetric population map (COS + Global Building Atlas combined) - 03_dasymetric_combined.R
+# Dasymetric population map (COS + Global Building Atlas combined) #20 (03_dasymetric_combined.R)
 grid_dasymetric = read.csv("data/base/daysimetric/grid_dasymetric_combined.csv")
 
-# --- 04_building_attributes.R -------------------------------------------------
-# Building characteristics on the H3 grid: BGRI-derived counts (dasymetric,
-# reusing 03's weight hierarchy) + Global Building Atlas per-building stats.
-grid_building_attributes     <- sf::st_read("data/base/daysimetric/grid_building_attributes.gpkg", quiet = TRUE)
-grid_building_attributes_csv <- read.csv("data/base/daysimetric/grid_building_attributes.csv")
+# Dasymetric building map (Censos BGRI + Global Building Atlas combined) #30 (04_building_attributes.R)
+grid_dasymetric_buildings = read.csv("data/base/daysimetric/grid_building_attributes.csv")
