@@ -145,7 +145,7 @@ require_cols(buildings, c("volume_m3", "est_floors"), "lisbon_metro_buildings_fo
 # Keep only needed columns and drop dataset-specific identifiers like 'id'
 # to prevent column collisions with grid$id during spatial intersections
 buildings <- buildings |>
-  select(any_of(c("volume_m3", "est_floors", "footprint_m2")))
+  select(any_of(c("volume_m3", "est_floors", "footprint_m2", "height")))
 
 message("[grid] Loading H3 grid from data/geo/grid.gpkg...")
 grid <- sf::st_read("data/geo/grid.gpkg", quiet = TRUE) |> st_make_valid()
@@ -181,10 +181,17 @@ grid <- st_transform(grid, target_crs) |> st_make_valid()
 census_bgri <- st_transform(census_bgri, target_crs) |> st_make_valid()
 buildings <- st_transform(buildings, target_crs) |> st_make_valid()
 
-# Ensure footprint_m2 is accurately computed in metric units (m2)
-if (!"footprint_m2" %in% names(buildings)) {
-  message("[prep] Computing footprint_m2 in EPSG:3763...")
-  buildings$footprint_m2 <- as.numeric(st_area(buildings))
+# Ensure footprint_m2 is accurately computed in metric units (m2 in EPSG:3763)
+message("[prep] Computing footprint_m2 in EPSG:3763...")
+buildings$footprint_m2 <- as.numeric(st_area(buildings))
+
+if ("height" %in% names(buildings)) {
+  message("[prep] Recomputing volume_m3 from metric footprint and height...")
+  buildings$volume_m3 <- ifelse(
+    !is.na(buildings$height) & buildings$height > 0,
+    round(buildings$footprint_m2 * buildings$height, 1),
+    buildings$volume_m3
+  )
 }
 
 
