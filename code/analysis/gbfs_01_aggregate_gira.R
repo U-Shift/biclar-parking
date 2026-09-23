@@ -148,7 +148,7 @@ aggregate_stations_at_grid <- function(status, stations_in_grid) {
 
 ## GIRA --------------------------------------------------------------------------
 message("\nProcessing GIRA data")
-output_folder <- paste0("data/analysis/gbfs/emel_gira")
+output_folder <- file.path(OUTPUT_FOLDER, "emel_gira")
 if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
 
 # Load metadata

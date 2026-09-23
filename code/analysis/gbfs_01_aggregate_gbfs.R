@@ -184,7 +184,7 @@ aggregate_bikes_at_grid <- function(bikes, types = NULL) {
 ## GBFS --------------------------------------------------------------------------
 for (r in REGIONS_GBFS) { # r = REGIONS_GBFS[[1]]
   message("\nProcessing GBFS data for ", r)
-  output_folder <- paste0("data/analysis/gbfs/", r)
+  output_folder <- file.path(OUTPUT_FOLDER, r)
   if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
 
   # Load metadata for region

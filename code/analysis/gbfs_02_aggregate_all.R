@@ -3,8 +3,8 @@
 
 source("code/analysis/gbfs_00_params.R")
 
-output_folder <- "data/analysis/gbfs"
-if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
+BASE_FOLDER <- OUTPUT_FOLDER
+if (!dir.exists(OUTPUT_FOLDER)) dir.create(OUTPUT_FOLDER, recursive = TRUE)
 
 for (p in seq_len(nrow(PERIODS))) {
     period <- PERIODS[p, ]
@@ -21,7 +21,7 @@ for (p in seq_len(nrow(PERIODS))) {
     operator_dfs <- list()
 
     for (r in REGIONS) {
-        op_path <- file.path(output_folder, r, period_file)
+        op_path <- file.path(BASE_FOLDER, r, period_file)
         if (file.exists(op_path)) {
             df <- read.csv(op_path)
             df$operator <- r
@@ -75,7 +75,7 @@ for (p in seq_len(nrow(PERIODS))) {
         grid_all[[paste0("avg_", type_name, "_per_update")]] <- round(grid_all[[col]] / grid_all$n_updates, 2)
     }
 
-    out_path <- file.path(output_folder, period_file)
+    out_path <- file.path(OUTPUT_FOLDER, period_file)
     write.csv(grid_all, out_path, row.names = FALSE)
     message(sprintf("Wrote %s (%d grid cells)", out_path, nrow(grid_all)))
 }
