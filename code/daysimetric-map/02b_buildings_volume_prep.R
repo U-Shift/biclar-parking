@@ -1,6 +1,8 @@
 # =============================================================================
 # Fetch Global Building Atlas footprints & estimate building volume
 #
+# Run with: $ Rscript code/daysimetric-map/02b_buildings_volume_prep.R > code/daysimetric-map/02b_buildings_volume_prep_$(date +%Y%m%d).log 2>&1
+#
 # Procedure:
 #   1. Load AML boundary and compute its rectangular bounding box.
 #   2. Initialize DuckDB with spatial and httpfs extensions to query S3 directly.
@@ -78,7 +80,7 @@ fetch_building_polygons <- function(bbox, parquet_file_dir) {
     mutate(geometry = st_as_sfc(geom_wkb, crs = 4326)) |>
     st_as_sf() |>
     mutate(
-      footprint_m2 = round(as.numeric(st_area(st_transform(geometry, 3857)))), # metric CRS for area
+      footprint_m2 = round(as.numeric(st_area(st_transform(geometry, 3763)))), # metric CRS for Portugal (EPSG:3763)
       est_floors = pmax(1, round(height / 3)), # average 3m height per floor, minimum of 1 floor
       total_floor_area_m2 = round(footprint_m2 * est_floors),
       volume_m3 = round(footprint_m2 * height)
