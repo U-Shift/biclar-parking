@@ -80,6 +80,15 @@ decode_firestore_doc <- function(doc) {
 
     asset_status <- ifelse(isTRUE(is_active) & (!is.na(service_status) & service_status == "AVAILABLE"), "active", "repair")
 
+    # Map station number from Name prefix (e.g. "253 - ..." -> 253 -> "1000253")
+    # to maintain backward compatibility with historical data collection and downstream analysis
+    station_num <- ifelse(grepl("^\\d+", name), sub("^(\\d+).*", "\\1", name), NA_character_)
+    serial_number <- ifelse(
+        !is.na(station_num),
+        sprintf("1000%03d", as.integer(station_num)),
+        as.character(code)
+    )
+
     tibble::tibble(
         code = as.character(code),
         description = description,
@@ -89,7 +98,7 @@ decode_firestore_doc <- function(doc) {
         bikes = as.integer(max(0, available_bikes, na.rm = TRUE)),
         docks = as.integer(max(0, dock_limit, na.rm = TRUE)),
         freeDocks = as.integer(max(0, free_docks, na.rm = TRUE)),
-        serialNumber = as.character(code),
+        serialNumber = serial_number,
         assetStatus = asset_status
     )
 }
@@ -141,7 +150,7 @@ if (!dir.exists(store_folder)) dir.create(store_folder, recursive = TRUE)
 
 write.csv(
     stations_df |>
-        select(serialNumber, bikes, docks, assetStatus) |>
+        select(serialNumber, code, bikes, docks, assetStatus) |>
         mutate(
             assetStatus = ifelse(assetStatus == "active", 1, 0)
         ),
