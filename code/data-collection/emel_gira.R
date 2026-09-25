@@ -12,107 +12,102 @@ library(jsonlite)
 library(dplyr)
 
 # --- Configuration ---
-base_url <- "https://c2g091p01.emel.pt"
-user_agent <- "Gira/3.4.3 (Android 34)"
+# Updated backend: GIRA switched from deprecated EMEL GraphQL service to Vaimoo Firestore API
+firestore_project <- "vaimoorotterdam"
+firestore_api_key <- "AIzaSyAmKfHdjYUhzYmg7qSZtRwwYE92HQQlmJ4"
+gira_tenant <- "P1/EML/EML/"
+firestore_url <- sprintf(
+    "https://firestore.googleapis.com/v1/projects/%s/databases/(default)/documents:runQuery?key=%s",
+    firestore_project,
+    firestore_api_key
+)
 
-# --- Retrieve credentials from environment variables ---
-# AttentioN! Make sure to have set the env variables, use usethis::edit_r_environ()
+# --- Retrieve Stations via Vaimoo Firestore API ---
+message("Fetching GIRA stations data from Vaimoo Firestore API...")
 
-email <- Sys.getenv("GIRA_EMAIL")
-password <- Sys.getenv("GIRA_PASSWORD")
-
-if (email == "" || password == "") {
-    stop(paste(
-        "Missing credentials!",
-        "Please set the GIRA_EMAIL and GIRA_PASSWORD environment variables before running this script.",
-        "You can set the environment variables using usethis::edit_r_environ()",
-        "Don't forget to restart your R session after setting the environment variables.",
-        sep = "\n"
-    ))
-}
-
-message("Authenticating with EMEL GIRA API...")
-
-# --- 1. Login Request ---
-login_payload <- list(
-    Provider = "EmailPassword",
-    CredentialsEmailPassword = list(
-        email = email,
-        password = password
+firestore_query <- list(
+    structuredQuery = list(
+        from = list(list(collectionId = "docking-stations")),
+        where = list(
+            fieldFilter = list(
+                field = list(fieldPath = "Tenant"),
+                op = "EQUAL",
+                value = list(stringValue = gira_tenant)
+            )
+        )
     )
 )
 
-login_req <- request(paste0(base_url, "/auth/login")) %>%
+stations_req <- request(firestore_url) %>%
     req_method("POST") %>%
-    req_headers(
-        `User-Agent` = user_agent,
-        `Priority` = "high"
-    ) %>%
-    req_body_json(login_payload)
+    req_headers(`Content-Type` = "application/json") %>%
+    req_body_json(firestore_query)
 
-# Perform login and extract access token
-tryCatch(
-    {
-        login_resp <- req_perform(login_req)
-        login_data <- resp_body_json(login_resp)
-        access_token <- login_data$data$accessToken
+decode_firestore_value <- function(val) {
+    if (is.null(val)) return(NA)
+    if (!is.null(val$stringValue)) return(val$stringValue)
+    if (!is.null(val$integerValue)) return(as.numeric(val$integerValue))
+    if (!is.null(val$doubleValue)) return(as.numeric(val$doubleValue))
+    if (!is.null(val$booleanValue)) return(val$booleanValue)
+    if (!is.null(val$geoPointValue)) return(val$geoPointValue)
+    if (!is.null(val$timestampValue)) return(val$timestampValue)
+    return(NA)
+}
 
-        if (is.null(access_token)) {
-            stop("Login response did not contain 'accessToken'.")
-        }
+decode_firestore_doc <- function(doc) {
+    fields <- doc$fields
+    if (is.null(fields)) return(NULL)
 
-        message("Login successful! Retrieved access token.")
-    },
-    error = function(e) {
-        stop(paste("Authentication failed:", e$message))
-    }
-)
+    code <- decode_firestore_value(fields$DockingStationId)
+    name <- decode_firestore_value(fields$Name)
+    is_active <- decode_firestore_value(fields$IsActive)
+    service_status <- decode_firestore_value(fields$ServiceStatus)
+    available_bikes <- decode_firestore_value(fields$AvailableBikes)
+    dock_limit <- decode_firestore_value(fields$DockLimit)
+    free_docks <- decode_firestore_value(fields$FreeDocks)
 
-# --- 2. Retrieve Stations via GraphQL ---
-message("Fetching GIRA stations data...")
+    loc <- fields$Location$geoPointValue
+    lat <- if (!is.null(loc$latitude)) loc$latitude else NA_real_
+    lon <- if (!is.null(loc$longitude)) loc$longitude else NA_real_
 
-graphql_query <- "query getStations {
-  getStations {
-    code
-    description
-    latitude
-    longitude
-    name
-    bikes
-    docks
-    serialNumber
-    assetStatus
-  }
-}"
+    street <- decode_firestore_value(fields$Street)
+    street_id <- decode_firestore_value(fields$StreetBuildingIdentifier)
+    city <- decode_firestore_value(fields$City)
 
-stations_req <- request(paste0(base_url, "/ws/graphql")) %>%
-    req_method("POST") %>%
-    req_headers(
-        `User-Agent` = user_agent,
-        `Authorization` = paste("Bearer", access_token)
-    ) %>%
-    req_body_json(list(query = graphql_query))
+    desc_parts <- c(street_id, street, city)
+    desc_parts <- desc_parts[!is.na(desc_parts) & desc_parts != ""]
+    description <- paste(desc_parts, collapse = " ")
 
-# Perform GraphQL request and parse into data.frame
+    asset_status <- ifelse(isTRUE(is_active) & (!is.na(service_status) & service_status == "AVAILABLE"), "active", "repair")
+
+    tibble::tibble(
+        code = as.character(code),
+        description = description,
+        latitude = lat,
+        longitude = lon,
+        name = as.character(name),
+        bikes = as.integer(max(0, available_bikes, na.rm = TRUE)),
+        docks = as.integer(max(0, dock_limit, na.rm = TRUE)),
+        freeDocks = as.integer(max(0, free_docks, na.rm = TRUE)),
+        serialNumber = as.character(code),
+        assetStatus = asset_status
+    )
+}
+
+# Perform Firestore request and parse into data.frame
 tryCatch(
     {
         stations_resp <- req_perform(stations_req)
-        stations_text <- resp_body_string(stations_resp)
+        raw_data <- resp_body_json(stations_resp)
 
-        # Parse with jsonlite for direct df extraction
-        parsed_response <- jsonlite::fromJSON(stations_text)
+        stations_list <- purrr::map(raw_data, ~ if (!is.null(.x$document)) decode_firestore_doc(.x$document) else NULL)
+        stations_df <- dplyr::bind_rows(stations_list)
 
-        # Access the list of stations
-        stations_df <- parsed_response$data$getStations
-
-        if (is.null(stations_df) || !is.data.frame(stations_df)) {
+        if (is.null(stations_df) || !is.data.frame(stations_df) || nrow(stations_df) == 0) {
             stop("Failed to parse stations into a data.frame from the response.")
         }
 
         message(sprintf("Successfully retrieved %d stations!", nrow(stations_df)))
-
-        # Print the first few rows of the data frame to demonstrate
-        # print(head(stations_df))
 
         # Export/make stations_df available (if running interactively)
         # or assign it to the global environment
@@ -128,9 +123,9 @@ tryCatch(
 # nrow(stations_df)
 # View(stations_df)
 
-# write.csv(stations_df |> select(-bikes, -docks, -assetStatus), "data/collection/gbfs/emel_gira/stations_information.csv", row.names = FALSE)
+# write.csv(stations_df |> select(-bikes, -docks, -freeDocks, -assetStatus), "data/collection/gbfs/emel_gira/stations_information.csv", row.names = FALSE)
 # stations_sf <- stations_df |>
-#    select(-bikes, -docks, -assetStatus) |>
+#    select(-bikes, -docks, -freeDocks, -assetStatus) |>
 #    sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
 # mapview::mapview(stations_sf)
 # sf::st_write(stations_sf, "data/collection/gbfs/emel_gira/stations_information.gpkg")
@@ -155,3 +150,4 @@ write.csv(
 )
 
 message("Done! :)")
+
