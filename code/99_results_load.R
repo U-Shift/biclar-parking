@@ -12,6 +12,8 @@ grid_ticketing_interfaces <- read.csv("data/analysis/ticketing/grid_ticketing_in
 
 # Dasymetric population map (COS + Global Building Atlas combined) #20 (03_dasymetric_combined.R)
 grid_dasymetric <- read.csv("data/base/daysimetric/grid_dasymetric_combined.csv")
+grid_dasymetric_cos <- read.csv("data/base/daysimetric/grid_dasymetric_cos_only.csv")
+grid_dasymetric_buildings <- read.csv("data/base/daysimetric/grid_dasymetric_all_buildings.csv")
 
 # Dasymetric building map (Censos BGRI + Global Building Atlas combined) #30 (04_building_attributes.R)
 grid_dasymetric_buildings <- read.csv("data/base/daysimetric/grid_building_attributes.csv")
