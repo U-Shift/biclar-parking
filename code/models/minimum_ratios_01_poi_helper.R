@@ -6,3 +6,6 @@ buildings_lma <- st_read("data/base/daysimetric/lisbon_metro_buildings_footprint
 
 poi_in_building <- poi_points |> filter(!category %in% c("bus_stop","cemetery","park_and_ride","station","zoo"))
 poi_buildings <- st_join(poi_in_building, buildings_lma)
+poi_error <- poi_buildings |> filter(is.na(poi_buildings$source.y))
+
+mapview(filter(poi_buildings,!is.na(poi_buildings$source.y)), col.regions="darkgreen")+mapview(filter(poi_buildings,is.na(poi_buildings$source.y)), col.regions="red")

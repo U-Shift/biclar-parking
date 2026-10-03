@@ -20,6 +20,6 @@ grid_dasymetric_buildings <- read.csv("data/base/daysimetric/grid_building_attri
 
 # POIS
 # Schools #37
-grid_pois_schools <- read.csv("data/base/pois/grid_schools_students.csv")
+#grid_pois_schools <- read.csv("data/base/pois/grid_schools_students.csv")
 # Others #34
 grid_pois <- read.csv("data/processed/poi/grid/poi_grid_counts.csv")
