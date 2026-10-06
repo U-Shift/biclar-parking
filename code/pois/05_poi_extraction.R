@@ -44,7 +44,7 @@ grid         <- st_read(grid_path, quiet = TRUE) |> st_transform(crs_work)
 standard_cols <- c("poi_id", "name", "category", "subcategory", "source", "municipality", "geometry")
 
 ## -----------------------------------------------------------------------------
-## 1. CARRIS METROPOLITANA -- facilities (schools, shopping centers, museums, theaters)
+## 1. CARRIS METROPOLITANA -- facilities (childcare, schools, universities, shopping centers, museums, theaters)
 ## -----------------------------------------------------------------------------
 
 cm_repo_raw <- "https://raw.githubusercontent.com/carrismetropolitana/datasets/latest"
@@ -72,6 +72,28 @@ cm_facilities <- bind_rows(
   read_cm_csv("facilities/shopping_centers/shopping_centers.csv","retail",         "shopping_center"),
   read_cm_csv("facilities/museums/museums.csv",                 "museum",         NA),
   read_cm_csv("facilities/theaters/theaters.csv",                "cinema_theatre", "theatre")
+)
+
+cm_facilities <- cm_facilities |>
+  mutate(category = case_when(
+    category == "schools" & str_detect(name, "Jardim de Infância") ~ "childcare",
+    category == "schools" & str_detect(name, "Jardim Infantil") ~ "childcare",
+    category == "schools" & str_detect(name, "Creche") ~ "childcare",
+    category == "schools" & str_detect(name, "Universidade") ~ "college_university",
+    category == "schools" & str_detect(name, "Instituto") ~ "college_university",
+    category == "schools" & str_detect(name, "Escola Superior") ~ "college_university",
+    TRUE ~ category
+  )) |>
+  mutate(subcategory = case_when(
+    category == "schools" & str_detect(name, "Escola Primária") ~ "primary",
+    category == "schools" & str_detect(name, "Escola Básica") ~ "primary",
+    category == "schools" & str_detect(name, "Colégio") ~ "primary",
+    category == "schools" & str_detect(name, "Externato") ~ "primary",
+    category == "schools" & str_detect(name, "Escola Secundária") ~ "secondary",
+    category == "schools" & str_detect(name, "Escola Profissional") ~ "secondary",
+    category == "schools" & str_detect(name, "Escola Artística") ~ "secondary",
+    TRUE ~ subcategory # schools which have none of these
+  )
 )
 
 ## -----------------------------------------------------------------------------
@@ -179,8 +201,6 @@ classify_osm <- function(df) {
   df |>
     mutate(
       category = case_when(
-        amenity == "kindergarten"                                   ~ "childcare",
-        amenity %in% c("college", "university")                     ~ "college_university",
         !is.na(shop) & !shop %in% c("mall")                          ~ "retail_other",
         amenity %in% c("doctors", "dentist") | !is.na(healthcare)    ~ "urban_professions",
         amenity == "cinema"                                          ~ "cinema_theatre",
