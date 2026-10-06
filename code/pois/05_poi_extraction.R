@@ -92,7 +92,7 @@ cm_facilities <- cm_facilities |>
     category == "schools" & str_detect(name, "Escola Secundária") ~ "secondary",
     category == "schools" & str_detect(name, "Escola Profissional") ~ "secondary",
     category == "schools" & str_detect(name, "Escola Artística") ~ "secondary",
-    TRUE ~ subcategory # schools which have none of these
+    TRUE ~ subcategory # schools whose names include none of these keywords will have subcategory ~ NA
   )
 )
 
