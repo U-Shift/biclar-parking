@@ -1,8 +1,10 @@
-# Code to create the minimum ratios model.
-# For Almada and Seixal, the values used are based on municipality regulations (RMUE),
-# while for the rest of the LMA values are based on literature recommendations.
+# Script to create the minimum ratios model.
+# For the municipalities Almada and Seixal, the values used are based on municipality regulations (RMUE).
+# For the rest of the LMA, values are based on literature recommendations, since no bicycle parking regulations exist.
 # Refer to https://github.com/U-Shift/biclar-parking/issues/9 (municipal regulations) and
 # https://github.com/U-Shift/biclar-parking/issues/7 (literature recommendations) for more details.
+# Complete methodology available at:
+# https://docs.google.com/document/d/1DSM_PcinC-S8Q3kiweb7OUQ05ckQvSMSx0THY80E_eI/edit?usp=drive_link
 
 # Code steps:
 # 1. Function to calculate residential minimum ratios. (WRAPPING UP)
