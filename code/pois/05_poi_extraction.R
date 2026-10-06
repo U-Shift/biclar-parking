@@ -77,7 +77,10 @@ cm_facilities <- bind_rows(
 cm_facilities <- cm_facilities |>
   mutate(category = case_when(
     category == "schools" & str_detect(name, "Jardim de Infância") ~ "childcare",
+    category == "schools" & str_detect(name, "Jardim De Infância") ~ "childcare",
+    category == "schools" & str_detect(name, "Jardim Escola") ~ "childcare",
     category == "schools" & str_detect(name, "Jardim Infantil") ~ "childcare",
+    category == "schools" & str_detect(name, "Centro Infantil") ~ "childcare",
     category == "schools" & str_detect(name, "Creche") ~ "childcare",
     category == "schools" & str_detect(name, "Universidade") ~ "college_university",
     category == "schools" & str_detect(name, "Instituto") ~ "college_university",
