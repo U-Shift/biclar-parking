@@ -1,24 +1,30 @@
-# INTRODUCTION -----------------------------
-## 99_poi_extraction.R
-##
-## Purpose: build a POI layer for the AML bicycle-parking siting model, covering
-## the demand-generator categories in the Danish Cycling Federation (2008) and
-## VSS/Velokonferenz Schweiz (2008) norm tables. Two output products:
-##   (1) individual POI points, one GPKG per category + one combined file
-##   (2) POI counts aggregated onto the shared H3 grid, one column per category
-##
-## Steps:
-## 0. Base code to define LMA bounds and standardize columns
-## 1. Base code to define LMA bounds and standardize columns
-##
-##
-## Source policy (per team decision):
-##   - carrismetropolitana/datasets is privileged wherever a category exists there
-##   - OSM (Geofabrik, via osmextract) is used only for categories absent from Carris
-##
-## Conventions: plain sf::st_read()/st_write() (no IMPT helpers), h3jsr for grid ops.
-#### NOTE: Schools and Universities are treated as separate from other POIs, due to an extra attribute: number of students.
-####       Code for these is found in "biclar-parking/code/pois/02_schools_univ_agg"
+# Introduction -----------------------------
+# 99_poi_extraction.R
+#
+# Purpose: build a POI layer for the AML bicycle-parking siting model, covering
+# the demand-generator categories in the Danish Cycling Federation (2008) and
+# VSS/Velokonferenz Schweiz (2008) norm tables. Two output products:
+#   (1) individual POI points, one GPKG per category + one combined file
+#   (2) POI counts aggregated onto the shared H3 grid, one column per category
+#
+# NOTE: Schools and Universities are treated as separate from other POIs, due to an extra attribute: number of students.
+#       Code for these is found in "biclar-parking/code/pois/02_schools_univ_agg"
+# Steps:
+# 0. Base code to define LMA bounds and standardize columns.
+# 1. Get all data possible from Carris Metropolitana.
+# 1.1. Facilities
+# 1.2. PT Stations
+# 1.3. Bus stops
+# 2. Get the remaining POIs from OSM.
+# 3. Combine all layers.
+# 4. Aggregated by grid cell.
+#
+# Source policy (per team decision):
+#   - carrismetropolitana/datasets is privileged wherever a category exists there
+#   - OSM (Geofabrik, via osmextract) is used only for categories absent from Carris
+#
+# Conventions: plain sf::st_read()/st_write() (no IMPT helpers), h3jsr for grid ops.
+
 
 library(sf)
 library(dplyr)
