@@ -16,10 +16,40 @@ library(sf)
 library(dplyr)
 library(tidyverse)
 
+source("code/00_data_load.R")
 
 # 1. Process school data -----------------------------------------------
 
-# cm_facilities <- cm_facilities |>
+cm_repo_raw <- "https://raw.githubusercontent.com/carrismetropolitana/datasets/latest"
+
+read_cm_schools <- function(rel_path, category, subcategory) {
+  url <- file.path(cm_repo_raw, rel_path)
+  df <- read_csv(url, show_col_types = FALSE)
+  df |>
+    filter(!is.na(lat), !is.na(lon)) |>
+    transmute(
+      poi_id       = as.character(id),
+      name         = name,
+      category     = category,
+      subcategory  = subcategory,
+      university   = ifelse(university==1,1,0),
+      source       = "carrismetropolitana",
+      municipality = municipality_name,
+      lon = lon, lat = lat
+    ) |>
+    st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
+    st_transform(crs_work)
+}
+
+cm_schools <- bind_rows(
+  read_cm_schools("facilities/schools/schools.csv","school",        NA)
+)
+
+cm_univ <- cm_schools |> subset(
+  university == 1
+)
+
+# cm_schools <- cm_schools |>
 #   mutate(category = case_when(
 #     category == "schools" & str_detect(name, "Jardim de Infância") ~ "childcare",
 #     category == "schools" & str_detect(name, "Jardim De Infância") ~ "childcare",
@@ -54,7 +84,7 @@ univ_students_raw <- read.csv("data/raw/schools_universities/Universities.csv", 
 #names(univ_students)
 
 
-## 2.1 Aggregate number of students by faculty, rename columns -----------
+## 2.1 Aggregate number of students by faculty -----------
 
 univ_students <- univ_students_raw |>
   filter(
@@ -75,6 +105,7 @@ univ_students <- univ_students_raw |>
     COD_UNIVERSIDADE = `Código do estabelecimento de ensino`,
     COD_FACULDADE = `Código da unidade orgânica`
   )
+
 
 
 
