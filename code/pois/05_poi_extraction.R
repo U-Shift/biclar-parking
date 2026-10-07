@@ -10,6 +10,8 @@
 ## Source policy (per team decision):
 ##   - carrismetropolitana/datasets is privileged wherever a category exists there
 ##   - OSM (Geofabrik, via osmextract) is used only for categories absent from Carris
+##   - School data (pre-school, basic and secondary) taken from "biclar-parking/code/pois/01_schools.R
+##   - University data taken from DGEEC (https://www.dgeec.medu.pt/art/ensino-superior/bases-de-dados/todas/652ff89abd5c2b00958292d7) - inscritos no ano letivo 2024/2025
 ##
 ## Conventions: plain sf::st_read()/st_write() (no IMPT helpers), h3jsr for grid ops.
 ## =============================================================================
