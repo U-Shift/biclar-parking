@@ -1,10 +1,23 @@
+# Introduction -----------------------------
+# 02_schools_univ_agg.R
+#
+# NOTE: This script is different from "99_poi_extraction.R" due to the databases being neither CMet or OSM,
+#       and due to the necessity of an extra attribute compared to the other POIs: number of students.
+#
+# Script purposes:
+#   - Process data from code/pois/01_schools.R (regarding pre-schools, primary and secondary schools).
+#   - Get data for universities, from DGEEC (https://www.dgeec.medu.pt/api/ficheiros/68f89bf9c82132f5733ead7a).
+#   - This dataset includes the number of students enrolled in universities in the school year 2024/2025.
+#   - Data for universities was turned into .csv and is available at data/raw/schools_universities/Universities.csv
+#
+# Code steps:
+
+library(sf)
+library(dplyr)
+library(tidyverse)
 
 
-##   - School data (pre-school, basic and secondary) taken from "biclar-parking/code/pois/01_schools.R
-##   - University data taken from DGEEC (https://www.dgeec.medu.pt/art/ensino-superior/bases-de-dados/todas/652ff89abd5c2b00958292d7) - inscritos no ano letivo 2024/2025
-
-
-# 3. Process school data -----------------------------------------------
+# 1. Process school data -----------------------------------------------
 
 # cm_facilities <- cm_facilities |>
 #   mutate(category = case_when(
@@ -32,4 +45,36 @@
 # )
 
 
-# 4. Get data for universities -----------------------------------------
+# 2. Get data for universities -----------------------------------------
+
+univ_students_raw <- read.csv("data/raw/schools_universities/Universities.csv", skip=2, check.names = FALSE,
+                          fileEncoding = "Latin1") # this way accents and special characters appear in the headers
+
+#View(univ_students)
+#names(univ_students)
+
+
+## 2.1 Aggregate number of students by faculty, rename columns -----------
+
+univ_students <- univ_students_raw |>
+  filter(
+    Distrito %in% c("Lisboa", "Setúbal")
+  ) |>
+  group_by(
+    # Code of faculty
+    `Código da unidade orgânica`
+  ) |>
+  summarise(
+    `Código do estabelecimento de ensino` = first(`Código do estabelecimento de ensino`),
+    UNIVERSIDADE = first(`Estabelecimento de ensino`),
+    FACULDADE = first(`Unidade orgânica`),
+    CONCELHO = first(Município),
+    N_ESTUDANTES = sum(N)
+  ) |>
+  rename(
+    COD_UNIVERSIDADE = `Código do estabelecimento de ensino`,
+    COD_FACULDADE = `Código da unidade orgânica`
+  )
+
+
+
