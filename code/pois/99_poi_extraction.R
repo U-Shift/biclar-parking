@@ -1,4 +1,4 @@
-## =============================================================================
+# INTRODUCTION -----------------------------
 ## 05_poi_extraction.R
 ##
 ## Purpose: build a POI layer for the AML bicycle-parking siting model, covering
@@ -7,14 +7,18 @@
 ##   (1) individual POI points, one GPKG per category + one combined file
 ##   (2) POI counts aggregated onto the shared H3 grid, one column per category
 ##
+## Steps:
+## 0. Base code to define LMA bounds and standardize columns
+## 1. Base code to define LMA bounds and standardize columns
+##
+##
 ## Source policy (per team decision):
 ##   - carrismetropolitana/datasets is privileged wherever a category exists there
 ##   - OSM (Geofabrik, via osmextract) is used only for categories absent from Carris
-##   - School data (pre-school, basic and secondary) taken from "biclar-parking/code/pois/01_schools.R
-##   - University data taken from DGEEC (https://www.dgeec.medu.pt/art/ensino-superior/bases-de-dados/todas/652ff89abd5c2b00958292d7) - inscritos no ano letivo 2024/2025
 ##
 ## Conventions: plain sf::st_read()/st_write() (no IMPT helpers), h3jsr for grid ops.
-## =============================================================================
+#### NOTE: Schools and Universities are treated as separate from other POIs, due to an extra attribute: number of students.
+####       Code for these is found in "biclar-parking/code/pois/02_schools_univ_agg"
 
 library(sf)
 library(dplyr)
@@ -25,9 +29,8 @@ library(tidyr)
 library(osmextract)
 library(h3jsr)
 
-## -----------------------------------------------------------------------------
-## 0. CONFIG -- fill these in before running
-## -----------------------------------------------------------------------------
+
+# 0. CONFIG -- fill these in before running --------------------------
 
 aml_boundary_path <- "data/base/daysimetric/clipping_boundary.geojson"
 grid_path         <- "data/geo/grid.gpkg"            # h3 id column is `h3_address`
@@ -45,9 +48,9 @@ grid         <- st_read(grid_path, quiet = TRUE) |> st_transform(crs_work)
 
 standard_cols <- c("poi_id", "name", "category", "subcategory", "source", "municipality", "geometry")
 
-## -----------------------------------------------------------------------------
-## 1. CARRIS METROPOLITANA -- facilities (childcare, schools, universities, shopping centers, museums, theaters)
-## -----------------------------------------------------------------------------
+
+# 1. CARRIS METROPOLITANA -------------------------------------------------
+## 1.1. Facilities (shopping centers, museums, theatres) --------
 
 cm_repo_raw <- "https://raw.githubusercontent.com/carrismetropolitana/datasets/latest"
 
@@ -70,40 +73,12 @@ read_cm_csv <- function(rel_path, category, subcategory) {
 }
 
 cm_facilities <- bind_rows(
-  read_cm_csv("facilities/schools/schools.csv",                 "schools",        NA),
   read_cm_csv("facilities/shopping_centers/shopping_centers.csv","retail",         "shopping_center"),
   read_cm_csv("facilities/museums/museums.csv",                 "museum",         NA),
   read_cm_csv("facilities/theaters/theaters.csv",                "cinema_theatre", "theatre")
 )
 
-cm_facilities <- cm_facilities |>
-  mutate(category = case_when(
-    category == "schools" & str_detect(name, "Jardim de Infância") ~ "childcare",
-    category == "schools" & str_detect(name, "Jardim De Infância") ~ "childcare",
-    category == "schools" & str_detect(name, "Jardim Escola") ~ "childcare",
-    category == "schools" & str_detect(name, "Jardim Infantil") ~ "childcare",
-    category == "schools" & str_detect(name, "Centro Infantil") ~ "childcare",
-    category == "schools" & str_detect(name, "Creche") ~ "childcare",
-    category == "schools" & str_detect(name, "Universidade") ~ "college_university",
-    category == "schools" & str_detect(name, "Instituto") ~ "college_university",
-    category == "schools" & str_detect(name, "Escola Superior") ~ "college_university",
-    TRUE ~ category
-  )) |>
-  mutate(subcategory = case_when(
-    category == "schools" & str_detect(name, "Escola Primária") ~ "primary",
-    category == "schools" & str_detect(name, "Escola Básica") ~ "primary",
-    category == "schools" & str_detect(name, "Colégio") ~ "primary",
-    category == "schools" & str_detect(name, "Externato") ~ "primary",
-    category == "schools" & str_detect(name, "Escola Secundária") ~ "secondary",
-    category == "schools" & str_detect(name, "Escola Profissional") ~ "secondary",
-    category == "schools" & str_detect(name, "Escola Artística") ~ "secondary",
-    TRUE ~ subcategory # schools whose names include none of these keywords will have subcategory ~ NA
-  )
-)
-
-## -----------------------------------------------------------------------------
-## 2. CARRIS METROPOLITANA -- stations (train/metro/light-rail/boat) + Park&Ride
-## -----------------------------------------------------------------------------
+## 1.2. Stations (train/metro/light-rail/boat) + Park&Ride --------
 
 cm_stations <- bind_rows(
   read_cm_csv("connections/train_stations/train_stations.csv",         "station", "train"),
@@ -114,9 +89,8 @@ cm_stations <- bind_rows(
 
 cm_park_ride <- read_cm_csv("connections/parking/parking.csv", "park_and_ride", NA)
 
-## -----------------------------------------------------------------------------
-## 3. CARRIS METROPOLITANA -- bus stops and terminals (GTFS, not in datasets repo)
-## -----------------------------------------------------------------------------
+
+## 1.3. Bus stops and terminals (from GTFS) --------
 ## Bus stops live in the GTFS static feed, not the "datasets" repo. Primary
 ## producer URL per Carris' own API docs; falls back to the GitHub mirror if
 ## that redirect ever changes.
@@ -154,9 +128,8 @@ cm_bus_stops <- stops_raw |>
   st_transform(crs_work) |>
   st_filter(aml_boundary)  # GTFS feed extends slightly beyond AML in places
 
-## -----------------------------------------------------------------------------
-## 4. OSM -- everything Carris doesn't cover
-## -----------------------------------------------------------------------------
+
+# 2. OSM -- everything Carris doesn't cover -------------------------------
 ## Geofabrik "Portugal" extract, spatially filtered to the AML boundary so we
 ## don't pull the whole country into memory. oe_get() caches the .osm.pbf, so
 ## re-runs are cheap.
@@ -243,9 +216,8 @@ classify_osm <- function(df) {
 
 osm_poi <- classify_osm(osm_all)
 
-## -----------------------------------------------------------------------------
-## 5. Combine, clip, export individual points
-## -----------------------------------------------------------------------------
+
+# 3. Combine, clip, export individual points ---------------------------
 
 poi_all <- bind_rows(
   cm_facilities, cm_stations, cm_park_ride, cm_bus_stops, osm_poi
@@ -273,9 +245,8 @@ poi_all |>
 # combined file
 st_write(poi_all, file.path(out_points_dir, "poi_all.gpkg"), delete_dsn = TRUE, quiet = TRUE)
 
-## -----------------------------------------------------------------------------
-## 6. Aggregate to the H3 grid
-## -----------------------------------------------------------------------------
+
+# 4. Aggregate to the H3 grid ------------------------------------------
 
 poi_wgs84 <- st_transform(poi_all, 4326)
 
