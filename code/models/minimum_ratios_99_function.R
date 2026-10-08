@@ -35,7 +35,11 @@ residential_minimum_ratios <- function(grid_gpkg, grid_csv, buildings_grid, rati
     total_area = buildings_grid$atlas_total_footprint_m2,
     residential_pct = buildings_grid$census_pct_residential/100,
     residential_area_m2 = total_area * residential_pct,
-    n_households = buildings_grid$census_dwellings_total
+    n_households = buildings_grid$census_dwellings_total,
+    # Debug
+    census_pct_residential = buildings_grid$census_pct_residential,
+    census_buildings_total = buildings_grid$census_buildings_total,
+    atlas_building_count = buildings_grid$atlas_building_count
     ) |>
     left_join(ratios, by = "mid") |>
     mutate(residential_parking_min = dplyr::case_when(
@@ -51,7 +55,10 @@ residential_minimum_ratios <- function(grid_gpkg, grid_csv, buildings_grid, rati
 
 residential_ratios <- read.csv("data/models/minimum_ratios/residential.csv")
 mrm_residential_parking_spots <- residential_minimum_ratios(grid, grid_csv, grid_dasymetric_buildings, residential_ratios)
-mapview(mrm_residential_parking_spots, zcol="residential_parking_min")
+
+mapview(mrm_residential_parking_spots, zcol="residential_parking_min") 
+
+# write.csv(mrm_residential_parking_spots |> st_drop_geometry(), "data/models/minimum_ratios/result.csv", row.names = FALSE)
 
 # 2. Commercial/Service minimum ratios function -------------------
 
