@@ -110,5 +110,5 @@ grid_schools <- grid |>
 mapview::mapview(grid_schools |> filter(n_schools!=0), zcol = "n_students")
 mapview::mapview(grid_schools |> filter(n_schools!=0), zcol = "n_schools")
 
-sf::st_write(grid_schools, "data/processed/poi/schools/grid_schools_students.gpkg")
+sf::st_write(grid_schools, "data/processed/poi/schools/grid_schools_students.gpkg", delete_dsn = TRUE)
 write.csv(grid_schools |> st_drop_geometry(), "data/processed/poi/schools/grid_schools_students.csv")
