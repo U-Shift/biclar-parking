@@ -1,5 +1,9 @@
 # Script to get floor area of each POI in LMA
 
+library(dplyr)
+library(osmdata)
+library(osmextract)
+
 source("code/00_data_load.R")
 source("code/99_results_load.R")
 
@@ -12,12 +16,22 @@ buildings_lma <- st_read("data/base/daysimetric/lisbon_metro_buildings_footprint
 
 aml_boundary <- st_read("data/geo/municipalities_union_bbox_plus_50m.gpkg") |> st_transform(4326) |> st_bbox()
 
-osm_buildings_fetch <- opq(bbox = aml_boundary) |>
-  add_osm_feature(key = "building") |>
-  osmdata_sf()
-osm_buildings <- osm_buildings_fetch$osm_polygons |> select(osm_id, building, name, geometry)
+### Using osmdata (not appropriate for such a large area)
+# osm_buildings_raw <- opq(bbox = aml_boundary) |>
+#   add_osm_feature(key = "building") |>
+#   osmdata_sf()
 
-
+### Using osmextract (not working)
+# osm_buildings_raw <- oe_get(
+#   place = "Portugal",
+#   layer = "multipolygons",
+#   boundary = aml_boundary,
+#   boundary_type = "spat",
+#   extra_tags = "building"
+# )
+# osm_buildings <- osm_buildings_raw |> filter(is.na(type)) |> select(osm_id, type, building, name, geometry)
+# mapview(osm_buildings)
+# write_sf(osm_buildings, "/data/base/osm_buildings.gpkg")
 
 # 2. Get buildings of each POI --------------------------------------------
 
