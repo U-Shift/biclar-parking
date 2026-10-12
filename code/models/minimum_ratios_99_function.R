@@ -32,22 +32,22 @@ grid_csv <- read.csv("useful_data/grid.csv")
 residential_minimum_ratios <- function(grid_gpkg, grid_csv, buildings_grid, ratios){
   parking_spots <- grid_gpkg |> mutate(
     mid = grid_csv$mid,
-    total_area = buildings_grid$atlas_total_footprint_m2,
-    residential_pct = buildings_grid$census_pct_residential/100,
-    residential_area_m2 = total_area * residential_pct,
     n_households = buildings_grid$census_dwellings_total,
-    # Debug
-    census_pct_residential = buildings_grid$census_pct_residential,
-    census_buildings_total = buildings_grid$census_buildings_total,
-    atlas_building_count = buildings_grid$atlas_building_count
+    ### Area units - deprecated
+    # total_area = buildings_grid$atlas_total_footprint_m2,
+    # census_pct_residential = ifelse(is.na(buildings_grid$census_pct_residential),0,buildings_grid$census_pct_residential),
+    # residential_pct = census_pct_residential/100,
+    # residential_area_m2 = total_area * residential_pct,
+    # census_buildings_total = buildings_grid$census_buildings_total,
+    # atlas_building_count = buildings_grid$atlas_building_count,
+    # census_atlas_ratio = ifelse(atlas_building_count==0,1,census_buildings_total/atlas_building_count)
+    ###
     ) |>
     left_join(ratios, by = "mid") |>
     mutate(residential_parking_min = dplyr::case_when(
-      residential_unit == "m2" ~ residential_min*residential_area_m2*residential_pct,
       residential_unit == "household" ~ residential_min*n_households
     )) |>
     mutate(residential_parking_max = dplyr::case_when(
-      residential_unit == "m2" ~ residential_max*residential_area_m2*residential_pct,
       residential_unit == "household" ~ residential_max*n_households
     ))
   return(parking_spots)
@@ -56,7 +56,7 @@ residential_minimum_ratios <- function(grid_gpkg, grid_csv, buildings_grid, rati
 residential_ratios <- read.csv("data/models/minimum_ratios/residential.csv")
 mrm_residential_parking_spots <- residential_minimum_ratios(grid, grid_csv, grid_dasymetric_buildings, residential_ratios)
 
-mapview(mrm_residential_parking_spots, zcol="residential_parking_min") 
+mapview(mrm_residential_parking_spots, zcol="residential_parking_min")
 
 # write.csv(mrm_residential_parking_spots |> st_drop_geometry(), "data/models/minimum_ratios/result.csv", row.names = FALSE)
 
