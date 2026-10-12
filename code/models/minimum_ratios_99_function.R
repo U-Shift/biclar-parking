@@ -32,7 +32,7 @@ grid_csv <- read.csv("useful_data/grid.csv")
 residential_minimum_ratios <- function(grid_gpkg, grid_csv, buildings_grid, ratios){
   parking_spots <- grid_gpkg |> mutate(
     mid = grid_csv$mid,
-    n_households = buildings_grid$census_dwellings_total,
+    n_households = buildings_grid$households,
     ### Area units - deprecated
     # total_area = buildings_grid$atlas_total_footprint_m2,
     # census_pct_residential = ifelse(is.na(buildings_grid$census_pct_residential),0,buildings_grid$census_pct_residential),
@@ -54,11 +54,11 @@ residential_minimum_ratios <- function(grid_gpkg, grid_csv, buildings_grid, rati
 }
 
 residential_ratios <- read.csv("data/models/minimum_ratios/residential.csv")
-mrm_residential_parking_spots <- residential_minimum_ratios(grid, grid_csv, grid_dasymetric_buildings, residential_ratios)
+mrm_residential_parking_spots <- residential_minimum_ratios(grid, grid_csv, grid_dasymetric, residential_ratios)
 
 mapview(mrm_residential_parking_spots, zcol="residential_parking_min")
 
-# write.csv(mrm_residential_parking_spots |> st_drop_geometry(), "data/models/minimum_ratios/result.csv", row.names = FALSE)
+write.csv(mrm_residential_parking_spots |> st_drop_geometry(), "data/outputs/minimum_ratios/residential.csv", row.names = FALSE)
 
 # 2. Commercial/Service minimum ratios function -------------------
 
