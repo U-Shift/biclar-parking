@@ -25,6 +25,7 @@ table(students_n$TIPOLOGIA)
 table(students_n$NÍVEL_DE__ENSINO)
 
 length(unique(students_n$CÓDIGO_DGEEC_ESCOLA)) # 7648
+unique(students_n$MUNICÍPIO)
 
 # Group by total students
 # Each "agrupamento" (CÓDIGO_DGEEC_AGRUPAMENTO) has multiple schools
@@ -34,7 +35,8 @@ length(unique(students_n$CÓDIGO_DGEEC_ESCOLA)) # 7648
 schools_students_n <- students_n |>
     filter(
         DISTRITO %in% c("Lisboa", "Setúbal"),
-        NÍVEL_DE__ENSINO != "Educação pré-escolar"
+        NÍVEL_DE__ENSINO != "Educação pré-escolar",
+        MUNICÍPIO %in% municipalities_meta$name
     ) |>
     group_by(
         # Location
@@ -57,12 +59,15 @@ schools_students_n <- students_n |>
         ESCOLA = gsub('"', "", ESCOLA)
     )
 # View(schools_students_n)
+unique(schools_students_n$MUNICÍPIO)
+testthat::expect_equal(sort(unique(schools_students_n$MUNICÍPIO)), sort(municipalities_meta$name))
 
 # 2. Get school locations
 # No matching ID, match using NOME, CONCELHO (= ESCOLA, MUNICÍPIO)
-schools_locations <- read.csv("data/raw/escolas_gesedu/RedeEscolar.csv") |>
+schools_locations <- read.csv("data/raw/schools_universities/RedeEscolar.csv") |>
     filter(
         DISTRITO %in% c("Lisboa", "Setúbal"),
+        CONCELHO %in% municipalities_meta$name,
         !(CICLO %in% c("Pré-escolar", "Extra-escolar")),
         !is.na(x)
     ) |>
@@ -70,15 +75,18 @@ schools_locations <- read.csv("data/raw/escolas_gesedu/RedeEscolar.csv") |>
     sf::st_filter(municipalities |> st_transform(3763))
 # View(schools_locations)
 
-nrow(schools_students_n) # 1355
-nrow(schools_locations) # 1310
+unique(schools_locations$CONCELHO)
+testthat::expect_equal(sort(unique(schools_locations$CONCELHO)), sort(municipalities_meta$name))
+
+nrow(schools_students_n) # 1175
+nrow(schools_locations) # 1277
 schools_locations_students <- schools_locations |>
     left_join(schools_students_n, by = c("NOME" = "ESCOLA", "CONCELHO" = "MUNICÍPIO")) |>
     filter(!is.na(N_ESTUDANTES)) |>
     select(DISTRITO, CONCELHO, NOME, TIPOLOGIA, N_ESTUDANTES)
 
 nrow(schools_locations_students) # 1120
-nrow(schools_locations_students) / nrow(schools_locations) # 85.5%
+nrow(schools_locations_students) / nrow(schools_locations) # 87.7%
 
 mapview::mapview(schools_locations_students, zcol = "N_ESTUDANTES")
 
@@ -88,7 +96,7 @@ missing <- schools_locations |>
 table(missing$CONCELHO)
 table(missing$CICLO)
 
-sf::st_write(schools_locations, "data/base/pois/schools_students.gpkg")
+sf::st_write(schools_locations, "data/processed/poi/schools/schools_students.gpkg", delete_dsn = TRUE)
 
 # Aggregate at grid
 grid_schools <- grid |>
