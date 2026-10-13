@@ -4,7 +4,7 @@
 grid_gbfs_bikes <- read.csv("data/analysis/gbfs/grid_bikes_all_0-24.csv")
 
 # Bike thefts #14
-grid_stolen <- read.csv("data/analysis/stolen/stolen_bikes_grid.csv")
+grid_thefts <- read.csv("data/processed/thefts/grid_thefts.csv")
 
 # Ticketing data #23
 grid_ticketing_global <- read.csv("data/analysis/ticketing/grid_ticketing_global.csv")
@@ -19,3 +19,7 @@ grid_dasymetric_cos <- read.csv("data/base/daysimetric/grid_dasymetric_cos_only.
 grid_pois_schools <- read.csv("data/processed/poi/schools/grid_schools_students.csv")
 # Others #34
 grid_pois <- read.csv("data/processed/poi/grid/poi_grid_counts.csv")
+
+# MODELS
+# Minimum ratios 
+model_mr <- read.csv("data/outputs/minimum_ratios/residential.csv")
