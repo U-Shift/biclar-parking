@@ -1,7 +1,8 @@
 library(mapview)
 library(sf)
+library(knitr)
 
-# source("code/00_data_load.R")
+source("code/00_data_load.R")
 
 filter_inside_aml <- function(data_sf) {
     data_sf <- data_sf |>
@@ -41,22 +42,54 @@ nrow(gnr_thefts_south) # 619
 mapview(municipalities |> filter(mid > 1116), col.regions = "gray", apha.regions = 0.5, legend = FALSE) +
     mapview(gnr_thefts_south, col.regions = "#660066", color = "#660066", legend = FALSE, alpha = 1)
 
+# > All
+gnr_thefts <- rbind(gnr_thefts_south, gnr_thefts_north)
+length(unique(gnr_thefts$mid)) # 14 out of 18
+
 # PSP -----------------------------------------------------------
-# Pending data provision
+# Read from data/raw/thefts/psp_aml.xlsx
+psp_thefts <- readxl::read_excel("data/raw/thefts/psp_aml.xlsx") |> mutate(
+    COORDENADA_X = as.double(COORDENADA_X),
+    COORDENADA_Y = as.double(COORDENADA_Y)
+)
+# View(psp_thefts)
+nrow(psp_thefts |> filter(is.na(COORDENADA_X))) # 4
+nrow(psp_thefts |> filter(is.na(COORDENADA_Y))) # 4 
+# View(psp_thefts |> filter(is.na(COORDENADA_Y)))
+ 
+nrow(psp_thefts) # 472
+psp_thefts <- psp_thefts |>
+    filter(!is.na(COORDENADA_X) & !is.na(COORDENADA_Y)) |>
+    st_as_sf(
+        coords = c("COORDENADA_X", "COORDENADA_Y"),
+        crs = 4326
+    )
+nrow(psp_thefts) # 468
+testthat::expect_equal(nrow(psp_thefts), 468)
+psp_thefts <- filter_inside_aml(psp_thefts)
+nrow(psp_thefts) # 456
+
+mapview(municipalities, col.regions = "gray", apha.regions = 0.5, legend = FALSE) +
+    mapview(psp_thefts, col.regions = "#01286BFF", color = "#01286BFF", legend = FALSE, alpha = 1)
+str(psp_thefts)
+
+length(unique(psp_thefts$mid)) # 10 out of 18
 
 # AGGREGATE ALL SOURCES -----------------------------------------------------------
 thefts_aggregated <- rbind(
-    gnr_thefts_north |> mutate(source = "GNR", dataset = "gnr_aml_north"),
-    gnr_thefts_south |> mutate(source = "GNR", dataset = "gnr_aml_south")
+    gnr_thefts_north |> select(mid) |> mutate(source = "GNR", dataset = "gnr_aml_north"),
+    gnr_thefts_south |> select(mid) |> mutate(source = "GNR", dataset = "gnr_aml_south"),
+    psp_thefts |> select(mid) |> mutate(source = "PSP", dataset = "psp_aml")
 )
-nrow(thefts_aggregated) # 650
-testthat::expect_equal(nrow(thefts_aggregated), nrow(gnr_thefts_north) + nrow(gnr_thefts_south))
-length(unique(thefts_aggregated$mid)) # 14 out of 18
+nrow(thefts_aggregated) # 1106
+testthat::expect_equal(nrow(thefts_aggregated), nrow(gnr_thefts_north) + nrow(gnr_thefts_south) + nrow(psp_thefts))
+length(unique(thefts_aggregated$mid)) # 18 out of 18
 
 mapview(municipalities, col.regions = "gray", apha.regions = 0.5, legend = FALSE) +
     mapview(thefts_aggregated, zcol = "dataset")
 
 sf::st_write(thefts_aggregated, "data/processed/thefts/thefts_aggregated.gpkg", delete_layer = TRUE)
+# thefts_aggregated = sf::st_read("data/processed/thefts/thefts_aggregated.gpkg")
 
 thefts_aggregated_municipalities <- thefts_aggregated |> left_join(read.csv("useful_data/municipalities.csv") |> mutate(mid = as.character(mid)))
 plot(as.factor(thefts_aggregated_municipalities$name))
@@ -65,10 +98,30 @@ table(thefts_aggregated_municipalities$name)
 # > Aggregate at grid
 grid_thefts <- grid
 grid_thefts$n_thefts <- lengths(st_intersects(grid, st_transform(thefts_aggregated, st_crs(grid))))
-grid_thefts <- grid_thefts |> select(gid, n_thefts)
+grid_thefts$n_thefts_gnr <- lengths(st_intersects(grid, st_transform(thefts_aggregated |> filter(source == "GNR"), st_crs(grid))))
+grid_thefts$n_thefts_psp <- lengths(st_intersects(grid, st_transform(thefts_aggregated |> filter(source == "PSP"), st_crs(grid))))
+testthat::expect_equal(grid_thefts$n_thefts, grid_thefts$n_thefts_gnr + grid_thefts$n_thefts_psp)
+
+grid_thefts <- grid_thefts |> select(gid, n_thefts, n_thefts_gnr, n_thefts_psp)
 
 mapview(grid_thefts |> filter(n_thefts != 0), zcol = "n_thefts")
-# mapview(thefts_aggregated, col.regions = "#0099ff", color = "#0099ff", legend = FALSE, alpha = 1)
 
 st_write(grid_thefts, "data/processed/thefts/grid_thefts.gpkg", delete_layer = TRUE)
 write.csv(grid_thefts |> st_drop_geometry(), "data/processed/thefts/grid_thefts.csv", row.names = FALSE)
+
+# SUMMARY TABLES -----------------------------------------------------------
+# Number of thefts per municipality (rows) and source (columns)
+table_thefts_source <- addmargins(
+    table(thefts_aggregated_municipalities$name, thefts_aggregated_municipalities$source),
+    FUN = list(Total = sum),
+    quiet = TRUE
+)
+knitr::kable(table_thefts_source, format = "markdown")
+
+# Number of thefts per municipality (rows) and dataset (columns)
+table_thefts_dataset <- addmargins(
+    table(thefts_aggregated_municipalities$name, thefts_aggregated_municipalities$dataset),
+    FUN = list(Total = sum),
+    quiet = TRUE
+)
+knitr::kable(table_thefts_dataset, format = "markdown")
