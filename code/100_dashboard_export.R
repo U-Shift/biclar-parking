@@ -22,7 +22,8 @@ grid_dashboard <- grid |>
     grid_dasymetric |> select(
       gid,
       # Raw
-      population, adults, youth, elderly, women, households,
+      population,
+      population_adults = adults, population_youth = youth, population_elderly = elderly, population_women = women, households,
       buildings, buildings_pre1945,
       # Composed
       ratio_youth = youth_ratio, ratio_elderly = elderly_ratio,
@@ -59,7 +60,7 @@ names(grid_dashboard)
 col_to_agg <- c(
   # Raw data
   # > Dasymetric map
-  dasymetric_population = "sum", dasymetric_adults = "sum", dasymetric_youth = "sum", dasymetric_elderly = "sum", dasymetric_women = "sum", dasymetric_households = "sum",
+  dasymetric_population = "sum", dasymetric_population_adults = "sum", dasymetric_population_youth = "sum", dasymetric_population_elderly = "sum", dasymetric_population_women = "sum", dasymetric_households = "sum",
   dasymetric_buildings = "sum", dasymetric_buildings_pre1945 = "sum",
   # > Thefts
   thefts_n = "sum", thefts_n_gnr = "sum", thefts_n_psp = "sum",
@@ -74,12 +75,12 @@ col_to_agg <- c(
 cols_mutate <- function(aggregated_layer) {
   return(aggregated_layer |> mutate(
     # Composed
-    dasymetric_ratio_youth = if_else(dasymetric_population > 0, round(dasymetric_youth / dasymetric_population * 100, 2), 0),
-    dasymetric_ratio_elderly = if_else(dasymetric_population > 0, round(dasymetric_elderly / dasymetric_population * 100, 2), 0),
-    dasymetric_dependency_youth = if_else(dasymetric_adults > 0, round(dasymetric_youth / dasymetric_adults * 100, 2), 0),
-    dasymetric_dependency_elderly = if_else(dasymetric_adults > 0, round(dasymetric_elderly / dasymetric_adults * 100, 2), 0),
+    dasymetric_ratio_youth = if_else(dasymetric_population > 0, round(dasymetric_population_youth / dasymetric_population * 100, 2), 0),
+    dasymetric_ratio_elderly = if_else(dasymetric_population > 0, round(dasymetric_population_elderly / dasymetric_population * 100, 2), 0),
+    dasymetric_dependency_youth = if_else(dasymetric_population_adults > 0, round(dasymetric_population_youth / dasymetric_population_adults * 100, 2), 0),
+    dasymetric_dependency_elderly = if_else(dasymetric_population_adults > 0, round(dasymetric_population_elderly / dasymetric_population_adults * 100, 2), 0),
     dasymetric_pp_hh_avg = if_else(dasymetric_households >= 3, round(dasymetric_population / dasymetric_households, 2), NA_real_),
-    dasymetric_women_percentage = if_else(dasymetric_population > 0, round(dasymetric_women / dasymetric_population * 100, 2), 0),
+    dasymetric_women_percentage = if_else(dasymetric_population > 0, round(dasymetric_population_women / dasymetric_population * 100, 2), 0),
     dasymetric_buildings_pre1945_percentage = if_else(dasymetric_buildings > 0, round(dasymetric_buildings_pre1945 / dasymetric_buildings * 100, 2), 0)
   ))
 }
@@ -126,16 +127,30 @@ parishes_dashboard <- parishes_dashboard |>
 municipalities_dashboard <- municipalities_dashboard |>
   mutate(across(where(is.numeric) & !matches("(^|_)(id|gid|pid|mid|nid)$|^id$", ignore.case = TRUE), ~ round(., 2)))
 
+# Define relational ids (group_id for parent)
+grid_dashboard <- grid_dashboard |> mutate(
+  region_id = nid,
+  group_id = pid
+)
+parishes_dashboard <- parishes_dashboard |> mutate(
+  region_id = nid,
+  group_id = mid
+)
+municipalities_dashboard <- municipalities_dashboard |> mutate(
+  region_id = nid
+)
+
 # Store output ------------------------------------------------------
 output_dir <- "data/dashboard_data"
 
-st_write(grid_dashboard, file.path(output_dir, "grid_dashboard.geojson"), delete_ds = TRUE)
-st_write(parishes_dashboard, file.path(output_dir, "parishes_dashboard.geojson"), delete_ds = TRUE)
-st_write(municipalities_dashboard, file.path(output_dir, "municipalities_dashboard.geojson"), delete_ds = TRUE)
+st_write(grid_dashboard, file.path(output_dir, "grid_dashboard.geojson"), delete_dsn = TRUE)
+st_write(parishes_dashboard, file.path(output_dir, "parishes_dashboard.geojson"), delete_dsn = TRUE)
+st_write(municipalities_dashboard, file.path(output_dir, "municipalities_dashboard.geojson"), delete_dsn = TRUE)
 
 write.csv(grid_dashboard |> st_drop_geometry(), file.path(output_dir, "grid_dashboard.csv"), row.names = FALSE)
 write.csv(parishes_dashboard |> st_drop_geometry(), file.path(output_dir, "parishes_dashboard.csv"), row.names = FALSE)
 write.csv(municipalities_dashboard |> st_drop_geometry(), file.path(output_dir, "municipalities_dashboard.csv"), row.names = FALSE)
+# grid_dashboard = read.csv(file.path(output_dir, "grid_dashboard.csv"))
 
 # Upload to IST server for dashboard  ----------------------------------------------------
 files <- c(
@@ -146,3 +161,5 @@ for (f in files) {
   scp_upload(session, paste(output_dir, f, sep = "/"), to = paste("/afs/.ist.utl.pt/groups/ushift/web/content/biclar", f, sep = "/"))
 }
 # scp_upload(session, paste(output_location, "champions.json", sep = "/"), to = paste("/afs/.ist.utl.pt/groups/ushift/web/content/biclar", "champions.json", sep = "/"))
+
+str(parishes_dashboard)
