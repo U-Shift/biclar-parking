@@ -152,10 +152,18 @@ write.csv(parishes_dashboard |> st_drop_geometry(), file.path(output_dir, "paris
 write.csv(municipalities_dashboard |> st_drop_geometry(), file.path(output_dir, "municipalities_dashboard.csv"), row.names = FALSE)
 # grid_dashboard = read.csv(file.path(output_dir, "grid_dashboard.csv"))
 
+st_write(
+  municipalities |> mutate(mid = as.integer(mid)) |> left_join(municipalities_meta) |>
+    mutate(region_id = nid),
+  file.path(output_dir, "municipios_limits.geojson"), 
+  delete_dsn = TRUE
+)
+
 # Upload to IST server for dashboard  ----------------------------------------------------
 files <- c(
   "municipalities_dashboard.geojson", "parishes_dashboard.geojson", "grid_dashboard.geojson",
-  "municipalities_dashboard.csv", "parishes_dashboard.csv", "grid_dashboard.csv"
+  "municipalities_dashboard.csv", "parishes_dashboard.csv", "grid_dashboard.csv",
+  "municipios_limits.geojson"
 )
 for (f in files) {
   scp_upload(session, paste(output_dir, f, sep = "/"), to = paste("/afs/.ist.utl.pt/groups/ushift/web/content/biclar", f, sep = "/"))
