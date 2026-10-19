@@ -1,0 +1,1 @@
+sudo mount --bind /data/TML/validacoes/ TML_validacoes/
