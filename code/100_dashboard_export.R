@@ -35,7 +35,8 @@ grid_dashboard <- grid |>
   ) |>
   # > Infrastructure
   left_join(
-    cycleways_grid |> select(
+    cycleways_grid |> st_drop_geometry() |> select(
+      gid,
       cycleways_length = total_cycleway_length,
       cycleways_length_protected = protected_cycleway_length,
       cycleways_length_active = active_cycleway_length,
@@ -43,7 +44,8 @@ grid_dashboard <- grid |>
     )
   ) |>
   left_join(
-    parking_grid |> select(
+    parking_grid |> st_drop_geometry() |> select(
+      gid,
       parking_n_points = n_points,
       parking_n_capacity = capacity
     )
