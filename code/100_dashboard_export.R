@@ -23,13 +23,12 @@ grid_dashboard <- grid |>
       gid,
       # Raw
       population,
-      population_adults = adults, population_youth = youth, population_elderly = elderly, population_women = women, households,
+      population_adults = adults, population_youth = youth, population_elderly = elderly, population_women = women,
+      households,
       buildings, buildings_pre1945,
       # Composed
-      ratio_youth = youth_ratio, ratio_elderly = elderly_ratio,
-      dependency_youth = youth_dependency, dependency_elderly = elderly_dependency,
+      population_ratio_youth = youth_ratio, population_ratio_elderly = elderly_ratio, population_ratio_women = women_percentage,
       pp_hh_avg,
-      women_percentage,
       buildings_pre1945_percentage
     ) |> rename_with(~ paste0("dasymetric_", .), -gid)
   ) |>
@@ -75,12 +74,10 @@ col_to_agg <- c(
 cols_mutate <- function(aggregated_layer) {
   return(aggregated_layer |> mutate(
     # Composed
-    dasymetric_ratio_youth = if_else(dasymetric_population > 0, round(dasymetric_population_youth / dasymetric_population * 100, 2), 0),
-    dasymetric_ratio_elderly = if_else(dasymetric_population > 0, round(dasymetric_population_elderly / dasymetric_population * 100, 2), 0),
-    dasymetric_dependency_youth = if_else(dasymetric_population_adults > 0, round(dasymetric_population_youth / dasymetric_population_adults * 100, 2), 0),
-    dasymetric_dependency_elderly = if_else(dasymetric_population_adults > 0, round(dasymetric_population_elderly / dasymetric_population_adults * 100, 2), 0),
+    dasymetric_population_ratio_youth = if_else(dasymetric_population > 0, round(dasymetric_population_youth / dasymetric_population * 100, 2), 0),
+    dasymetric_population_ratio_elderly = if_else(dasymetric_population > 0, round(dasymetric_population_elderly / dasymetric_population * 100, 2), 0),
+    dasymetric_population_ratio_women = if_else(dasymetric_population > 0, round(dasymetric_population_women / dasymetric_population * 100, 2), 0),
     dasymetric_pp_hh_avg = if_else(dasymetric_households >= 3, round(dasymetric_population / dasymetric_households, 2), NA_real_),
-    dasymetric_women_percentage = if_else(dasymetric_population > 0, round(dasymetric_population_women / dasymetric_population * 100, 2), 0),
     dasymetric_buildings_pre1945_percentage = if_else(dasymetric_buildings > 0, round(dasymetric_buildings_pre1945 / dasymetric_buildings * 100, 2), 0)
   ))
 }
@@ -129,14 +126,17 @@ municipalities_dashboard <- municipalities_dashboard |>
 
 # Define relational ids (group_id for parent)
 grid_dashboard <- grid_dashboard |> mutate(
+  id = gid,
   region_id = nid,
   group_id = pid
 )
 parishes_dashboard <- parishes_dashboard |> mutate(
+  id = pid,
   region_id = nid,
   group_id = mid
 )
 municipalities_dashboard <- municipalities_dashboard |> mutate(
+  id = mid,
   region_id = nid
 )
 
@@ -155,7 +155,7 @@ write.csv(municipalities_dashboard |> st_drop_geometry(), file.path(output_dir, 
 st_write(
   municipalities |> mutate(mid = as.integer(mid)) |> left_join(municipalities_meta) |>
     mutate(region_id = nid),
-  file.path(output_dir, "municipios_limits.geojson"), 
+  file.path(output_dir, "municipios_limits.geojson"),
   delete_dsn = TRUE
 )
 
