@@ -27,7 +27,7 @@ grid_dashboard <- grid |>
       households,
       buildings, buildings_pre1945,
       # Composed
-      population_ratio_youth = youth_ratio, population_ratio_elderly = elderly_ratio, population_ratio_women = women_percentage,
+      population_youth_percentage = youth_ratio, population_elderly_percentage = elderly_ratio, population_women_percentage = women_percentage,
       dependency_ratio_youth = youth_dependency, dependency_ratio_elderly = elderly_dependency,
       pp_hh_avg,
       buildings_pre1945_percentage
@@ -75,9 +75,9 @@ col_to_agg <- c(
 cols_mutate <- function(aggregated_layer) {
   return(aggregated_layer |> mutate(
     # Composed
-    dasymetric_population_ratio_youth = if_else(dasymetric_population > 0, round(dasymetric_population_youth / dasymetric_population * 100, 2), 0),
-    dasymetric_population_ratio_elderly = if_else(dasymetric_population > 0, round(dasymetric_population_elderly / dasymetric_population * 100, 2), 0),
-    dasymetric_population_ratio_women = if_else(dasymetric_population > 0, round(dasymetric_population_women / dasymetric_population * 100, 2), 0),
+    dasymetric_population_youth_percentage = if_else(dasymetric_population > 0, round(dasymetric_population_youth / dasymetric_population * 100, 2), 0),
+    dasymetric_population_elderly_percentage = if_else(dasymetric_population > 0, round(dasymetric_population_elderly / dasymetric_population * 100, 2), 0),
+    dasymetric_population_women_percentage = if_else(dasymetric_population > 0, round(dasymetric_population_women / dasymetric_population * 100, 2), 0),
     dasymetric_dependency_ratio_youth = if_else(dasymetric_population_adults > 0, round(dasymetric_population_youth / dasymetric_population_adults * 100, 2), 0),
     dasymetric_dependency_ratio_elderly = if_else(dasymetric_population_adults > 0, round(dasymetric_population_elderly / dasymetric_population_adults * 100, 2), 0),
     dasymetric_pp_hh_avg = if_else(dasymetric_households >= 3, round(dasymetric_population / dasymetric_households, 2), NA_real_),
