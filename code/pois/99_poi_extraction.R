@@ -125,7 +125,7 @@ cm_bus_stops <- stops_raw |>
   st_filter(aml_boundary)  # GTFS feed extends slightly beyond AML in places
 
 
-# 2. OSM -- everything Carris doesn't cover -------------------------------
+# 2. OSM -- everything CM doesn't cover -------------------------------
 ## Geofabrik "Portugal" extract, spatially filtered to the AML boundary so we
 ## don't pull the whole country into memory. oe_get() caches the .osm.pbf, so
 ## re-runs are cheap.
@@ -174,8 +174,8 @@ classify_osm <- function(df) {
   df |>
     mutate(
       category = case_when(
-        shop == "mall"                                     ~ "retail_large",
-        !is.na(shop) & shop != "mall"                      ~ "retail_small",
+        shop == "mall" | building == "retail"              ~ "retail_large",
+        !is.na(shop) & !shop %in% c("mall")                ~ "retail_small",
         !is.na(healthcare)                                 ~ "healthcare_centres",
         amenity %in% c("cinema", "theatre", "arts_centre",
                        "place_of_worship", "library")      ~ "cultural",
@@ -213,7 +213,8 @@ classify_osm <- function(df) {
       category, subcategory,
       source = "osm", municipality = NA_character_,
       geometry = geometry
-    )
+    ) |>
+    subset(!is.na(name))
 }
 
 osm_poi <- classify_osm(osm_all)
@@ -222,11 +223,11 @@ osm_poi <- classify_osm(osm_all)
 # 3. Combine, clip, export individual points ---------------------------
 
 poi_all <- bind_rows(
-  cm_facilities, cm_stations, cm_bus_stops, osm_poi
+  cm_stations, cm_bus_stops, osm_poi
 ) |>
   select(all_of(standard_cols)) |>
   st_filter(aml_boundary) |>
-  distinct(poi_id, category, .keep_all = TRUE)  # guards against feed re-runs, not cross-source dedup
+  distinct(poi_id, name, category, .keep_all = TRUE)  # guards against feed re-runs, not cross-source dedup
 
 # validation printout -- check before exporting
 poi_all |> st_drop_geometry() |> count(category, source, sort = TRUE) |> print(n = 40)
