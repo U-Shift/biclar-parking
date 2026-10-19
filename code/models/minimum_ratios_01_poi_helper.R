@@ -30,6 +30,8 @@ osm_buildings_raw <- oe_get(
   boundary = aml_boundary,
   boundary_type = "spat", # spatial boundary
   extra_tags = "building",
+  force_download = TRUE,
+  force_vectortranslate = TRUE,
   quiet = FALSE
 )
 osm_buildings <- osm_buildings_raw |>

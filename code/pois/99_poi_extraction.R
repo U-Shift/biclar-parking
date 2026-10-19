@@ -56,7 +56,6 @@ standard_cols <- c("poi_id", "name", "category", "subcategory", "source", "munic
 
 
 # 1. CARRIS METROPOLITANA -------------------------------------------------
-## 1.1. Facilities (shopping centers, museums, theatres) --------
 
 cm_repo_raw <- "https://raw.githubusercontent.com/carrismetropolitana/datasets/latest"
 
@@ -78,25 +77,16 @@ read_cm_csv <- function(rel_path, category, subcategory) {
     st_transform(crs_work)
 }
 
-cm_facilities <- bind_rows(
-  read_cm_csv("facilities/shopping_centers/shopping_centers.csv","retail",         "shopping_center"),
-  read_cm_csv("facilities/museums/museums.csv",                 "museum",         NA),
-  read_cm_csv("facilities/theaters/theaters.csv",                "cinema_theatre", "theatre")
-)
-
-## 1.2. Stations (train/metro/light-rail/boat) + Park&Ride --------
+## 1.1. Stations (train/metro/light-rail/boat) --------
 
 cm_stations <- bind_rows(
-  read_cm_csv("connections/train_stations/train_stations.csv",         "station", "train"),
-  read_cm_csv("connections/subway_stations/subway_stations.csv",       "station", "metro"),
+  read_cm_csv("connections/train_stations/train_stations.csv", "station", "train"),
+  read_cm_csv("connections/subway_stations/subway_stations.csv", "station", "metro"),
   read_cm_csv("connections/light_rail_stations/light_rail_stations.csv","station", "light_rail"),
-  read_cm_csv("connections/boat_stations/boat_stations.csv",           "station", "boat")
+  read_cm_csv("connections/boat_stations/boat_stations.csv", "station", "boat")
 )
 
-cm_park_ride <- read_cm_csv("connections/parking/parking.csv", "park_and_ride", NA)
-
-
-## 1.3. Bus stops and terminals (from GTFS) --------
+## 1.2. Bus stops and terminals (from GTFS) --------
 ## Bus stops live in the GTFS static feed, not the "datasets" repo. Primary
 ## producer URL per Carris' own API docs; falls back to the GitHub mirror if
 ## that redirect ever changes.
@@ -140,33 +130,32 @@ cm_bus_stops <- stops_raw |>
 ## don't pull the whole country into memory. oe_get() caches the .osm.pbf, so
 ## re-runs are cheap.
 
-aml_boundary_4326 <- st_transform(aml_boundary, 4326)
+aml_boundary_4326 <- st_transform(aml_boundary, 4326) |> st_bbox()
 
 osm_tags <- c("amenity", "shop", "tourism", "leisure", "office", "healthcare", "landuse")
 
 osm_points_raw <- oe_get(
-  place = "Portugal",
+  place = aml_boundary_4326,
   layer = "points",
   extra_tags = osm_tags,
-  boundary = aml_boundary_4326,
   boundary_type = "spat",
+  force_download = TRUE,
+  force_vectortranslate = TRUE,
   quiet = FALSE
 )
 
 osm_polygons_raw <- oe_get(
-  place = "Portugal",
+  place = aml_boundary_4326,
   layer = "multipolygons",
   extra_tags = osm_tags,
+  boundary_type = "spat",
+  force_download = TRUE,
+  force_vectortranslate = TRUE,
   quiet = FALSE
 )
-# NB: boundary/boundary_type="spat" is unreliable here at the GDAL level, and an
-# exact spatial filter against the full national layer (670k+ rows, including
-# huge coastline/admin polygons) is unstable in GEOS. Filter by tag first --
-# cheap, and it drops the irrelevant giant geometries -- then do the spatial
-# clip on the much smaller remainder.
+
 osm_polygons_tagged <- osm_polygons_raw |>
-  filter(!is.na(amenity) | !is.na(shop) | !is.na(tourism) | !is.na(leisure) |
-           !is.na(office) | !is.na(healthcare) | !is.na(landuse))
+  filter(!is.na(amenity) | !is.na(shop) | !is.na(tourism) | !is.na(leisure) | !is.na(office) | !is.na(healthcare) | !is.na(landuse))
 
 osm_polygon_centroids <- osm_polygons_tagged |>
   st_transform(crs_work) |>
@@ -185,29 +174,36 @@ classify_osm <- function(df) {
   df |>
     mutate(
       category = case_when(
-        !is.na(shop) & !shop %in% c("mall")                          ~ "retail_other",
-        amenity %in% c("doctors", "dentist") | !is.na(healthcare)    ~ "urban_professions",
-        amenity == "cinema"                                          ~ "cinema_theatre",
-        tourism %in% c("hotel", "hostel", "guest_house")             ~ "hotel_hostel",
-        amenity == "restaurant"                                      ~ "restaurant",
+        shop == "mall"                                     ~ "retail_large",
+        !is.na(shop) & shop != "mall"                      ~ "retail_small",
+        !is.na(healthcare)                                 ~ "healthcare_centres",
+        amenity %in% c("cinema", "theatre", "arts_centre",
+                       "place_of_worship", "library")      ~ "cultural",
+        tourism %in% c("hotel", "hostel", "guest_house")   ~ "hotel_hostel",
+        amenity %in% c("cafe", "restaurant", "fast_food")  ~ "cafe_restaurant",
         leisure %in% c("sports_centre", "fitness_centre",
-                       "swimming_pool")                              ~ "sports_facility",
-        leisure == "stadium"                                         ~ "stadium",
-        !is.na(office)                                                ~ "office_industry",
-        landuse == "industrial"                                       ~ "office_industry",
-        leisure %in% c("park", "garden", "nature_reserve") |
-          tourism == "attraction"                                     ~ "recreational_area",
-        amenity == "library"                                          ~ "library",
-        amenity == "nightclub"                                        ~ "disco_dance_bar",
-        landuse == "cemetery" | amenity == "grave_yard"               ~ "cemetery",
-        amenity == "place_of_worship"                                 ~ "church",
-        tourism == "zoo"                                              ~ "zoo",
-        TRUE                                                          ~ NA_character_
+                       "swimming_pool", "stadium")         ~ "sports_facility",
+        !is.na(office)                                     ~ "office_industry",
+        landuse == "industrial"                            ~ "office_industry",
+        leisure %in% c("park", "garden", "nature_reserve") ~ "recreational_area",
+        amenity %in% c("bar","nightclub")                  ~ "bar",
+        TRUE                                               ~ NA_character_
       ),
       subcategory = case_when(
-        !is.na(shop) & category == "retail_other" ~ shop,
-        !is.na(healthcare)                         ~ healthcare,
-        !is.na(office)                             ~ office,
+        !is.na(healthcare) & healthcare != "hospital" &
+        healthcare != "pharmacy" & healthcare != "clinic"  ~ "healthcare_other",
+        healthcare == "hospital"                           ~ "hospital",
+        healthcare == "pharmacy"                           ~ "pharmacy",
+        healthcare == "clinic"                             ~ "clinic",
+        amenity == "cinema"                                ~ "cinema",
+        amenity == "theatre"                               ~ "theatre",
+        amenity == "arts_centre"                           ~ "cultural_other",
+        amenity == "place_of_worship"                      ~ "church",
+        amenity == "library"                               ~ "library",
+        amenity == "cafe"                                  ~ "cafe",
+        amenity %in% c("restaurant","fast_food")           ~ "restaurant",
+        !is.na(office)                                     ~ "office",
+        landuse == "industrial"                            ~ "industry",
         TRUE ~ NA_character_
       )
     ) |>
@@ -226,7 +222,7 @@ osm_poi <- classify_osm(osm_all)
 # 3. Combine, clip, export individual points ---------------------------
 
 poi_all <- bind_rows(
-  cm_facilities, cm_stations, cm_park_ride, cm_bus_stops, osm_poi
+  cm_facilities, cm_stations, cm_bus_stops, osm_poi
 ) |>
   select(all_of(standard_cols)) |>
   st_filter(aml_boundary) |>
