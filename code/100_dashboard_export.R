@@ -33,6 +33,21 @@ grid_dashboard <- grid |>
       buildings_pre1945_percentage
     ) |> rename_with(~ paste0("dasymetric_", .), -gid)
   ) |>
+  # > Infrastructure
+  left_join(
+    cycleways_grid |> select(
+      cycleways_length = total_cycleway_length,
+      cycleways_length_protected = protected_cycleway_length,
+      cycleways_length_active = active_cycleway_length,
+      cycleways_length_advisory = advisory_cycleway_length
+    )
+  ) |>
+  left_join(
+    parking_grid |> select(
+      parking_n_points = n_points,
+      parking_n_capacity = capacity
+    )
+  ) |>
   # > Thefts
   left_join(
     grid_thefts |> rename_with(~ stringr::str_replace(., "n_thefts", "thefts_n"))
@@ -62,6 +77,13 @@ col_to_agg <- c(
   # > Dasymetric map
   dasymetric_population = "sum", dasymetric_population_adults = "sum", dasymetric_population_youth = "sum", dasymetric_population_elderly = "sum", dasymetric_population_women = "sum", dasymetric_households = "sum",
   dasymetric_buildings = "sum", dasymetric_buildings_pre1945 = "sum",
+  # > Infrastructure
+  cycleways_length = "sum",
+  cycleways_length_protected = "sum",
+  cycleways_length_active = "sum",
+  cycleways_length_advisory = "sum",
+  parking_n_points = "sum",
+  parking_n_capacity = "sum",
   # > Thefts
   thefts_n = "sum", thefts_n_gnr = "sum", thefts_n_psp = "sum",
   # Models

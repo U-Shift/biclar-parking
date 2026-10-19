@@ -1,5 +1,14 @@
 # This script should include the outputs of all analysis performed
 
+
+# LMA cycleway network #22 ----------------------------------------------
+cycleways <- sf::st_read("data/base/existing_cycleways/aml_osm_cycleways.gpkg")
+cycleways_grid <- sf::st_read("data/base/existing_cycleways/osm_cycleways_grid.gpkg")
+
+# LMA bicycle parking locations #21 -------------------------------------
+parking <- sf::st_read("data/base/existing_parking/aml_osm_parking.gpkg")
+parking_grid <- sf::st_read("data/base/existing_parking/osm_parking_grid.gpkg")
+
 # GBFS data #29
 grid_gbfs_bikes <- read.csv("data/analysis/gbfs/grid_bikes_all_0-24.csv")
 
@@ -21,5 +30,5 @@ grid_pois_schools <- read.csv("data/processed/poi/schools/grid_schools_students.
 grid_pois <- read.csv("data/processed/poi/grid/poi_grid_counts.csv")
 
 # MODELS
-# Minimum ratios 
+# Minimum ratios
 model_mr <- read.csv("data/outputs/minimum_ratios/residential.csv")
