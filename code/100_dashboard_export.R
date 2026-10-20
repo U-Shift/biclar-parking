@@ -167,6 +167,8 @@ municipalities_dashboard <- municipalities_dashboard |> mutate(
   region_id = nid
 )
 
+
+
 # Store output ------------------------------------------------------
 output_dir <- "data/dashboard_data"
 
@@ -186,11 +188,36 @@ st_write(
   delete_dsn = TRUE
 )
 
+# Extra geo layers ------------------------------------------------------
+str(cycleways |> st_drop_geometry())
+# mapview(municipalities, col.regions = "#00ccff", alpha.regions = 0.3) + mapview(cycleways |> filter(is.na(municipality)), color = "red")
+st_write(
+  cycleways |>
+    st_transform(4326) |>
+    left_join(municipalities_meta, by = c("municipality" = "name")) |>
+    select(osm_id, name, cycle_segregation, region_id = nid),
+  file.path(output_dir, "layer_cycleways.geojson"),
+  delete_dsn = TRUE
+)
+
+str(parking |> st_drop_geometry())
+# mapview(municipalities, col.regions = "#00ccff", alpha.regions = 0.3) + mapview(parking |> filter(is.na(municipality)), color = "red")
+st_write(
+  parking |>
+    filter(!is.na(municipality)) |>
+    left_join(municipalities_meta, by = c("municipality" = "name")) |>
+    select(ID, capacity, region_id = nid) |>
+    st_transform(4326),
+  file.path(output_dir, "layer_parking.geojson"),
+  delete_dsn = TRUE
+)
+
 # Upload to IST server for dashboard  ----------------------------------------------------
 files <- c(
   "municipalities_dashboard.geojson", "parishes_dashboard.geojson", "grid_dashboard.geojson",
   "municipalities_dashboard.csv", "parishes_dashboard.csv", "grid_dashboard.csv",
-  "municipios_limits.geojson"
+  "municipios_limits.geojson",
+  "layer_cycleways.geojson", "layer_parking.geojson"
 )
 for (f in files) {
   scp_upload(session, paste(output_dir, f, sep = "/"), to = paste("/afs/.ist.utl.pt/groups/ushift/web/content/biclar", f, sep = "/"))
