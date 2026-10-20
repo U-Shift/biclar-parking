@@ -37,7 +37,7 @@ names(CAOP_GLPS)
 # mapview(CAOP_GLPS)
 
 # sf::st_write(CAOP_GLPS, "data/geo/CAOP_GLPS.gpkg", delete_dsn = TRUE)
-# CAOP_GLPS <- sf::st_read("data/geo/CAOP_GLPS.gpkg")
+# CAOP_GLPS <- sf::st_read("data/geo/CAOP_GLPS.gpkg") 
 
 
 ## 2. Fetch latest COS from DGT ----------------------------------------------------
@@ -67,19 +67,40 @@ COS_GLPS <- COS |>
   st_make_valid() |>
   mutate(n_row = row_number())
 nrow(COS_GLPS) # 31104
+
+# sf::st_write(COS_GLPS, "data/geo/COS_GLPS.gpkg", delete_dsn = TRUE)
+# COS_GLPS <- sf::st_read("data/geo/COS_GLPS.gpkg")
 # mapview(COS_GLPS)
 table(COS_GLPS$COS23_n4_L)
 
-# > Remove water from COS
+# > Remove water from COS (only when not surrounded by other polygons)
 WATER_LABELS <- c("Desembocaduras fluviais", "Zonas entremarés", "Sapais", "Pauis e turfeiras")
 # FARMING_LABELS <- c("Arrozais", "Culturas temporárias de sequeiro e regadio", "Pastagens melhoradas")
-mapview(COS_GLPS |> filter(COS23_n4_L %in% WATER_LABELS), layer.name = "Water", col.regions = "#00ccff") +
+
+cos_water <- COS_GLPS |> filter(COS23_n4_L %in% WATER_LABELS) |> st_make_valid()
+cos_land <- COS_GLPS |> filter(!COS23_n4_L %in% WATER_LABELS) |> st_make_valid()
+
+# Identify enclosed holes in land
+land_union <- st_union(cos_land |> st_transform(3763))
+
+requireNamespace("nngeo", quietly = FALSE)
+land_filled <- nngeo::st_remove_holes(land_union) |> st_transform(st_crs(cos_water))
+
+# Keep water polygons that fall inside filled land (surrounded by land)
+water_surrounded <- cos_water |>
+  filter(lengths(st_within(st_point_on_surface(geom), land_filled)) > 0)
+water_removed <- cos_water |>
+  filter(!n_row %in% water_surrounded$n_row)
+
+mapview(cos_land, layer.name = "Land", col.regions = "#996633", alpha.regions = 0.1, alpha = 0) +
+  mapview(water_removed, layer.name = "Water removed", col.regions = "#00ccff") +
+  mapview(water_surrounded, layer.name = "Water kept (surrounded)", col.regions = "#001c13")
   # mapview(COS_GLPS |> filter(COS23_n4_L %in% FARMING_LABELS), layer.name="Farming", col.regions="#00ff00") +
   # mapview(COS_GLPS |> filter(COS23_n4_L == "Rede rodoviária"), layer.name="Roads", col.regions="#808080") +
-  mapview(COS_GLPS |> filter(!COS23_n4_L %in% c(WATER_LABELS)), layer.name = "Land", col.regions = "#996633")
-COS_GLPS_LAND <- COS_GLPS |>
-  filter(!(COS23_n4_L %in% WATER_LABELS))
-nrow(COS_GLPS_LAND) # 30975
+  
+
+COS_GLPS_LAND <- bind_rows(cos_land, water_surrounded)
+nrow(COS_GLPS_LAND)
 # mapview(COS_GLPS_LAND)
 
 # > Remove bboxs from COS_GLPS_LAND
@@ -103,6 +124,7 @@ mapview(COS_GLPS_LAND, layer.name = "COS Land", col.regions = "#996633")
 
 # > Cut CAOP using COS land geometry
 COS_GLPS_LAND_UNION <- COS_GLPS_LAND |>
+  st_transform(3763) |>
   st_union()
 mapview(COS_GLPS_LAND_UNION, layer.name = "COS Land Union", col.regions = "#996633") +
   mapview(COS_GLPS, layer.name = "COS", col.regions = "#00cc99") +
@@ -114,11 +136,11 @@ mapview(COS_GLPS_LAND_UNION, layer.name = "COS Land Union", col.regions = "#9966
 
 # > Cut CAOP_GLPS with COS_GLPS_LAND
 CAOP_GLPS_LAND <- CAOP_GLPS |>
-  st_intersection(COS_GLPS_LAND_UNION) |>
+  st_intersection(COS_GLPS_LAND_UNION |> st_transform(st_crs(CAOP_GLPS))) |>
   st_make_valid()
 nrow(CAOP_GLPS_LAND) # 188
 # mapview(CAOP_GLPS_LAND)
-
+CAOP_GLPS_LAND <- nngeo::st_remove_holes(CAOP_GLPS_LAND)
 
 ## 4. Make sure each parish has one unique polygon ----------------------------------------------------
 # > For parishes with multiple polygons, choose the one with greatest area_ha, without loosing other attributes
@@ -126,6 +148,8 @@ CAOP_GLPS_LAND_UNIQUE_dtmnfr <- CAOP_GLPS_LAND |>
   group_by(dtmnfr) |>
   slice_max(order_by = area_ha, n = 1, with_ties = FALSE) |>
   ungroup()
+# Make sure land has no holes either
+
 nrow(CAOP_GLPS_LAND_UNIQUE_dtmnfr) # 124
 mapview(CAOP_GLPS_LAND_UNIQUE_dtmnfr)
 
@@ -153,7 +177,7 @@ mapview(
 
 parishes_metric <- CAOP_GLPS_LAND_UNIQUE_dtmnfr |>
   st_transform(crs = 3763) |>
-  mutate(area_km2 = round(as.numeric(st_area(st_geometry(geom))) / 1e6, 2)) |>
+  mutate(area_km2 = round(as.numeric(st_area(st_geometry(geometry))) / 1e6, 2)) |>
   st_drop_geometry()
 
 parishes <- CAOP_GLPS_LAND_UNIQUE_dtmnfr |>
@@ -174,7 +198,7 @@ parishes
 
 # sf::st_write(parishes |> select(pid, area_km2), "data/geo/parishes.gpkg", delete_dsn = TRUE)
 # parishes <- sf::st_read("data/geo/parishes.gpkg")
-# write.csv(parishes |> st_drop_geometry(), "useful_data/parishes.csv", row.names = FALSE)
+write.csv(parishes |> st_drop_geometry(), "useful_data/parishes.csv", row.names = FALSE)
 
 ## 6. Group by municipality ----------------------------------------------------
 
@@ -185,7 +209,8 @@ municipalities <- CAOP_GLPS_LAND |>
     name = municipio
   ) |>
   group_by(mid, name, nid) |>
-  summarise(geometry = st_union(geom))
+  summarise(geometry = st_union(geometry))
+  
 nrow(municipalities) # 18
 # mapview(municipalities, zcol="name")
 # mapview(municipalities, zcol="nid")
