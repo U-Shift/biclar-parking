@@ -18,7 +18,7 @@ interfaces <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/in
         # For each element, trim leading/trailing whitespace
         interface_list = lapply(interface_list, function(x) trimws(x))
     ) |>
-  mutate(cod_interf = row_number())
+    mutate(cod_interf = row_number())
 
 View(interfaces |> st_drop_geometry())
 nrow(interfaces) # 267
@@ -105,17 +105,40 @@ for (z in ticketing_sources) {
     ))
 }
 
+nrow(ticketing_raw) # 2124810
+table((ticketing_raw |> left_join(operators, by = c("operator_id" = "id")))$name)
 ticketing_sf <- ticketing_raw |>
     filter(!is.na(lat), !is.na(lon)) |>
     st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
     mutate(id = row_number())
+nrow(ticketing_sf) # 2101672 (-23138 Total, -18750 Carris, -3806 CP)
+table((ticketing_sf |> left_join(operators, by = c("operator_id" = "id")))$name)
+table(ticketing_sf$operator_id)
 
 mapview(
-    ticketing_sf |> left_join(operators, by = c("operator_id" = "id")),
+    ticketing_sf |> sample_n(100) |> left_join(operators, by = c("operator_id" = "id")),
     zcol = "name",
     layer.name = "Entry validations"
 )
 
+operators$mode <- NA_character_
+operators[operators$name == "Barraqueiro Transportes", ]$mode <- "bus"
+operators[operators$name == "Carris", ]$mode <- "bus"
+operators[operators$name == "Cascais Próxima", ]$mode <- "bus"
+operators[operators$name == "Área 1", ]$mode <- "bus"
+operators[operators$name == "Área 2", ]$mode <- "bus"
+operators[operators$name == "Área 3", ]$mode <- "bus"
+operators[operators$name == "Área 4", ]$mode <- "bus"
+operators[operators$name == "Transportes Colectivos do Barreiro", ]$mode <- "bus"
+operators[operators$name == "CP", ]$mode <- "train"
+operators[operators$name == "Fertagus", ]$mode <- "train"
+operators[operators$name == "Metropolitano", ]$mode <- "metro"
+operators[operators$name == "Metro Transportes do Sul", ]$mode <- "LTR"
+operators[operators$name == "Transtejo", ]$mode <- "boat"
+operators
+
+ticketing_sf <- ticketing_sf |> left_join(operators |> select(id, mode), by = c("operator_id" = "id"))
+table(ticketing_sf$mode)
 
 # Overlap ticketing and interfaces --------------------------------------------------
 
@@ -175,6 +198,10 @@ ticketing_in_grid <- st_join(
     grid |> select(gid),
     join = st_within
 )
+ticketing_in_grid <- ticketing_in_grid |> left_join(
+    ticketing_sf |> st_drop_geometry() |> select(id, mode),
+    by = c("tid" = "id")
+)
 ticketing_in_grid |> sample_n(10)
 mapview(ticketing_in_grid |> filter(is.na(gid)))
 
@@ -182,10 +209,22 @@ grid_ticketing_global <- ticketing_in_grid |>
     st_drop_geometry() |>
     filter(!is.na(gid)) |>
     group_by(gid) |>
-    summarise(n = n())
+    summarise(
+        n = n(),
+        n_bus = sum(mode == "bus", na.rm = TRUE),
+        n_train = sum(mode == "train", na.rm = TRUE),
+        n_metro = sum(mode == "metro", na.rm = TRUE),
+        n_ltr = sum(tolower(mode) == "ltr", na.rm = TRUE),
+        n_boat = sum(mode == "boat", na.rm = TRUE)
+    )
 
 sum(grid_ticketing_global$n)
 mapview(grid |> left_join(grid_ticketing_global), zcol = "n")
+# mapview(grid |> left_join(grid_ticketing_global) |> filter(n_bus>0), zcol = "n_bus")
+# mapview(grid |> left_join(grid_ticketing_global) |> filter(n_train>0), zcol = "n_train")
+# mapview(grid |> left_join(grid_ticketing_global) |> filter(n_metro>0), zcol = "n_metro")
+# mapview(grid |> left_join(grid_ticketing_global) |> filter(n_ltr>0), zcol = "n_ltr")
+# mapview(grid |> left_join(grid_ticketing_global) |> filter(n_boat>0), zcol = "n_boat")
 
 write.csv(
     grid_ticketing_global,
@@ -195,18 +234,18 @@ write.csv(
 
 # > Tickets at interfaces
 
-interfaces_in_grid = st_join(
+interfaces_in_grid <- st_join(
     interfaces |> select(cod_interf),
     grid |> select(gid),
     join = st_within
 )
 
 grid_ticketing_interfaces <- interfaces_in_grid |>
-  st_drop_geometry() |>
-  filter(!is.na(cod_interf)) |>
-  left_join(interface_ticketing_sf |> st_drop_geometry()) |> 
-  group_by(gid) |>
-  summarise(n = sum(n))
+    st_drop_geometry() |>
+    filter(!is.na(cod_interf)) |>
+    left_join(interface_ticketing_sf |> st_drop_geometry()) |>
+    group_by(gid) |>
+    summarise(n = sum(n))
 
 sum(grid_ticketing_interfaces$n)
 mapview(grid |> left_join(grid_ticketing_interfaces), zcol = "n")

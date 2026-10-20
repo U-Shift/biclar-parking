@@ -54,6 +54,10 @@ grid_dashboard <- grid |>
   left_join(
     grid_thefts |> rename_with(~ stringr::str_replace(., "n_thefts", "thefts_n"))
   ) |>
+  # > Ticketing
+  left_join(
+    grid_ticketing_global |> rename_with(~ paste0("ticketing_", .), -gid)
+  ) |>
   # Models
   # > Minimum ratios
   left_join(
@@ -88,6 +92,13 @@ col_to_agg <- c(
   parking_n_capacity = "sum",
   # > Thefts
   thefts_n = "sum", thefts_n_gnr = "sum", thefts_n_psp = "sum",
+  # > Ticketing
+  ticketing_n = "sum",
+  ticketing_n_bus = "sum",
+  ticketing_n_train = "sum",
+  ticketing_n_metro = "sum",
+  ticketing_n_ltr = "sum",
+  ticketing_n_boat = "sum",
   # Models
   # > Minimum ratios
   model_mr_ratio_residential_min = "min",

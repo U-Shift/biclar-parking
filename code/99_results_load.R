@@ -17,7 +17,6 @@ grid_thefts <- read.csv("data/processed/thefts/grid_thefts.csv")
 
 # Ticketing data #23
 grid_ticketing_global <- read.csv("data/analysis/ticketing/grid_ticketing_global.csv")
-grid_ticketing_interfaces <- read.csv("data/analysis/ticketing/grid_ticketing_interfaces.csv")
 
 # Dasymetric population map (COS + Global Building Atlas combined) #20 (03_dasymetric_combined.R)
 grid_dasymetric <- read.csv("data/base/daysimetric/grid_dasymetric_combined.csv")
