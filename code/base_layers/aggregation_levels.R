@@ -140,6 +140,7 @@ CAOP_GLPS_LAND <- CAOP_GLPS |>
   st_make_valid()
 nrow(CAOP_GLPS_LAND) # 188
 # mapview(CAOP_GLPS_LAND)
+# Make sure land has no holes either
 CAOP_GLPS_LAND <- nngeo::st_remove_holes(CAOP_GLPS_LAND)
 
 ## 4. Make sure each parish has one unique polygon ----------------------------------------------------
@@ -148,7 +149,6 @@ CAOP_GLPS_LAND_UNIQUE_dtmnfr <- CAOP_GLPS_LAND |>
   group_by(dtmnfr) |>
   slice_max(order_by = area_ha, n = 1, with_ties = FALSE) |>
   ungroup()
-# Make sure land has no holes either
 
 nrow(CAOP_GLPS_LAND_UNIQUE_dtmnfr) # 124
 mapview(CAOP_GLPS_LAND_UNIQUE_dtmnfr)
