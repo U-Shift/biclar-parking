@@ -57,72 +57,72 @@ standard_cols <- c("poi_id", "name", "category", "subcategory", "source", "munic
 
 # 1. CARRIS METROPOLITANA -------------------------------------------------
 
-cm_repo_raw <- "https://raw.githubusercontent.com/carrismetropolitana/datasets/latest"
-
-read_cm_csv <- function(rel_path, category, subcategory) {
-  url <- file.path(cm_repo_raw, rel_path)
-  df <- read_csv(url, show_col_types = FALSE)
-  df |>
-    filter(!is.na(lat), !is.na(lon)) |>
-    transmute(
-      poi_id       = as.character(id),
-      name         = name,
-      category     = category,
-      subcategory  = subcategory,
-      source       = "carrismetropolitana",
-      municipality = municipality_name,
-      lon = lon, lat = lat
-    ) |>
-    st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
-    st_transform(crs_work)
-}
-
-## 1.1. Stations (train/metro/light-rail/boat) --------
-
-cm_stations <- bind_rows(
-  read_cm_csv("connections/train_stations/train_stations.csv", "station", "train"),
-  read_cm_csv("connections/subway_stations/subway_stations.csv", "station", "metro"),
-  read_cm_csv("connections/light_rail_stations/light_rail_stations.csv","station", "light_rail"),
-  read_cm_csv("connections/boat_stations/boat_stations.csv", "station", "boat")
-)
-
-## 1.2. Bus stops and terminals (from GTFS) --------
-## Bus stops live in the GTFS static feed, not the "datasets" repo. Primary
-## producer URL per Carris' own API docs; falls back to the GitHub mirror if
-## that redirect ever changes.
-
-gtfs_zip <- tempfile(fileext = ".zip")
-gtfs_ok <- tryCatch({
-  download.file("https://api.carrismetropolitana.pt/gtfs", gtfs_zip, mode = "wb", quiet = TRUE)
-  TRUE
-}, error = function(e) FALSE)
-
-if (!gtfs_ok) {
-  download.file("https://github.com/carrismetropolitana/gtfs/raw/live/CarrisMetropolitana.zip",
-                gtfs_zip, mode = "wb", quiet = TRUE)
-}
-
-gtfs_dir <- tempfile()
-unzip(gtfs_zip, exdir = gtfs_dir)
-
-stops_raw <- read_csv(file.path(gtfs_dir, "stops.txt"), show_col_types = FALSE)
-
-# location_type 0/NA = stop or platform; 1 = station (parent). We want the
-# boarding stops themselves -- terminals show up as clusters of stops sharing
-# a name/parent_station, which is exactly what the norm table treats as one
-# "terminal", so no separate terminal aggregation is done here.
-cm_bus_stops <- stops_raw |>
-  filter(is.na(location_type) | location_type == 0) |>
-  filter(!is.na(stop_lat), !is.na(stop_lon)) |>
-  transmute(
-    poi_id = as.character(stop_id), name = stop_name,
-    category = "bus_stop", subcategory = NA_character_,
-    source = "carrismetropolitana_gtfs", municipality = NA_character_,
-    lon = stop_lon, lat = stop_lat
-  ) |>
-  st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
-  st_transform(crs_work) |>
-  st_filter(aml_boundary)  # GTFS feed extends slightly beyond AML in places
+# cm_repo_raw <- "https://raw.githubusercontent.com/carrismetropolitana/datasets/latest"
+#
+# read_cm_csv <- function(rel_path, category, subcategory) {
+#   url <- file.path(cm_repo_raw, rel_path)
+#   df <- read_csv(url, show_col_types = FALSE)
+#   df |>
+#     filter(!is.na(lat), !is.na(lon)) |>
+#     transmute(
+#       poi_id       = as.character(id),
+#       name         = name,
+#       category     = category,
+#       subcategory  = subcategory,
+#       source       = "carrismetropolitana",
+#       municipality = municipality_name,
+#       lon = lon, lat = lat
+#     ) |>
+#     st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
+#     st_transform(crs_work)
+# }
+#
+# ## 1.1. Stations (train/metro/light-rail/boat) --------
+#
+# cm_stations <- bind_rows(
+#   read_cm_csv("connections/train_stations/train_stations.csv", "station", "train"),
+#   read_cm_csv("connections/subway_stations/subway_stations.csv", "station", "metro"),
+#   read_cm_csv("connections/light_rail_stations/light_rail_stations.csv","station", "light_rail"),
+#   read_cm_csv("connections/boat_stations/boat_stations.csv", "station", "boat")
+# )
+#
+# ## 1.2. Bus stops and terminals (from GTFS) --------
+# ## Bus stops live in the GTFS static feed, not the "datasets" repo. Primary
+# ## producer URL per Carris' own API docs; falls back to the GitHub mirror if
+# ## that redirect ever changes.
+#
+# gtfs_zip <- tempfile(fileext = ".zip")
+# gtfs_ok <- tryCatch({
+#   download.file("https://api.carrismetropolitana.pt/gtfs", gtfs_zip, mode = "wb", quiet = TRUE)
+#   TRUE
+# }, error = function(e) FALSE)
+#
+# if (!gtfs_ok) {
+#   download.file("https://github.com/carrismetropolitana/gtfs/raw/live/CarrisMetropolitana.zip",
+#                 gtfs_zip, mode = "wb", quiet = TRUE)
+# }
+#
+# gtfs_dir <- tempfile()
+# unzip(gtfs_zip, exdir = gtfs_dir)
+#
+# stops_raw <- read_csv(file.path(gtfs_dir, "stops.txt"), show_col_types = FALSE)
+#
+# # location_type 0/NA = stop or platform; 1 = station (parent). We want the
+# # boarding stops themselves -- terminals show up as clusters of stops sharing
+# # a name/parent_station, which is exactly what the norm table treats as one
+# # "terminal", so no separate terminal aggregation is done here.
+# cm_bus_stops <- stops_raw |>
+#   filter(is.na(location_type) | location_type == 0) |>
+#   filter(!is.na(stop_lat), !is.na(stop_lon)) |>
+#   transmute(
+#     poi_id = as.character(stop_id), name = stop_name,
+#     category = "bus_stop", subcategory = NA_character_,
+#     source = "carrismetropolitana_gtfs", municipality = NA_character_,
+#     lon = stop_lon, lat = stop_lat
+#   ) |>
+#   st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
+#   st_transform(crs_work) |>
+#   st_filter(aml_boundary)  # GTFS feed extends slightly beyond AML in places
 
 
 # 2. OSM -- everything CM doesn't cover -------------------------------
