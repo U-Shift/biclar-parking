@@ -1,6 +1,8 @@
 # =============================================================================
 # Dasymetric residential population mapping (Parameterized Workflow)
 #
+# Run with: Rscript 03_dasymetric_combined.R --mode=cos_only
+#
 # Modes:
 #   - "combined":      Building volume inside residential COS -> COS area fallback -> BGRI area fallback (default)
 #   - "cos_only":      Residential COS land-use area weights only (no fallback)
@@ -537,6 +539,7 @@ fragments_with_pop <- all_pairs |>
 h3_pop_table <- fragments_with_pop |>
   group_by(id) |>
   summarise(
+    population_raw = sum(fragment_pop, na.rm = TRUE),
     population = sum(fragment_pop, na.rm = TRUE),
     buildings = sum(fragment_buildings, na.rm = TRUE),
     buildings_pre1945 = sum(fragment_buildings_pre45, na.rm = TRUE),
@@ -545,7 +548,15 @@ h3_pop_table <- fragments_with_pop |>
     adults = sum(fragment_adults, na.rm = TRUE),
     elderly = sum(fragment_elderly, na.rm = TRUE),
     women = sum(fragment_women, na.rm = TRUE),
+    # --- Debugging weights and sources ---
     weight_source = first(weight_source),
+    weight_sources = paste(sort(unique(weight_source)), collapse = "+"),
+    n_frags = n(),
+    n_bgri = n_distinct(BGRI2021),
+    weight_total = sum(weight, na.rm = TRUE),
+    weight_vol_sum = sum(weight[weight_source == "building_volume"], na.rm = TRUE),
+    weight_cos_sum = sum(weight[weight_source == "cos_area"], na.rm = TRUE),
+    weight_area_sum = sum(weight[weight_source == "bare_area"], na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -566,9 +577,11 @@ grid_final <- grid |>
   left_join(h3_pop_table, by = "id") |>
   mutate(
     across(c(
-      population, buildings, buildings_pre1945, households,
-      youth, adults, elderly, women
+      population, population_raw, buildings, buildings_pre1945, households,
+      youth, adults, elderly, women, n_frags, n_bgri,
+      weight_total, weight_vol_sum, weight_cos_sum, weight_area_sum
     ), ~ replace_na(.x, 0)),
+    weight_sources = replace_na(weight_sources, "none"),
     across(c(population, buildings, buildings_pre1945, youth, adults, elderly, women), ceiling),
     households = if_else(households > 0 & households < 1, 1, households),
     population_density = population / area_km2,
@@ -626,7 +639,7 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 out_base <- paste0("grid_dasymetric_", DASYMETRIC_MODE, run_suffix)
 out_gpkg <- file.path(out_dir, paste0(out_base, ".gpkg"))
-out_csv  <- file.path(out_dir, paste0(out_base, ".csv"))
+out_csv <- file.path(out_dir, paste0(out_base, ".csv"))
 
 sf::st_write(grid_final, out_gpkg, delete_dsn = TRUE)
 write.csv(sf::st_drop_geometry(grid_final), out_csv, row.names = FALSE)
