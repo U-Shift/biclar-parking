@@ -1,7 +1,7 @@
 # =============================================================================
 # Dasymetric residential population mapping (Parameterized Workflow)
 #
-# Run with: Rscript 03_dasymetric_combined.R --mode=cos_only
+# Run with: Rscript code/daysimetric-map/03_dasymetric_combined.R
 #
 # Modes:
 #   - "combined":      Building volume inside residential COS -> COS area fallback -> BGRI area fallback (default)
@@ -434,19 +434,44 @@ if (DASYMETRIC_MODE %in% c("combined", "cos_only")) {
 # 9. Bare BGRI area fallback (combined mode only) ----------------------------
 
 if (DASYMETRIC_MODE == "combined") {
-  message("[fallback] Computing bare BGRI-area fallback fragments...")
-  t0 <- Sys.time()
-  bgri_area_frags_sf <- st_intersection(grid_active, census_simple)
-  bgri_area_frags_sf$bare_area <- as.numeric(st_area(bgri_area_frags_sf))
-  bgri_area_frags <- bgri_area_frags_sf |>
-    st_drop_geometry() |>
-    select(id, BGRI2021, bare_area) |>
-    filter(bare_area > 0)
+  # Identify BGRIs that already have weights from higher-priority tiers
+  bgri_with_vol <- if (!is.null(vol_weights)) unique(vol_weights$BGRI2021) else character(0)
+  bgri_with_cos <- if (!is.null(cos_bgri_frags)) unique(cos_bgri_frags$BGRI2021) else character(0)
+
+  # Fallback BGRIs: those lacking both building volume and residential COS
+  census_fallback <- census_simple |>
+    filter(!BGRI2021 %in% bgri_with_vol, !BGRI2021 %in% bgri_with_cos, N_INDIVIDUOS > 0)
+
+  n_inhabited <- n_distinct((census_simple |> filter(N_INDIVIDUOS > 0))$BGRI2021)
+  n_gap <- n_distinct(census_fallback$BGRI2021)
   message(sprintf(
-    "[fallback] Bare-area pairs: %d — %.1f min",
-    nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
+    "[fallback] %d / %d inhabited BGRIs lack both building volume and residential COS (atlas gaps)",
+    n_gap, n_inhabited
   ))
-  rm(bgri_area_frags_sf)
+
+  if (n_gap > 0) {
+    message("[fallback] Computing bare BGRI-area fallback fragments for gap blocks...")
+    t0 <- Sys.time()
+    bgri_area_frags_sf <- st_intersection(grid_active, census_fallback)
+    bgri_area_frags_sf$bare_area <- as.numeric(st_area(bgri_area_frags_sf))
+    bgri_area_frags <- bgri_area_frags_sf |>
+      st_drop_geometry() |>
+      group_by(id, BGRI2021) |>
+      summarise(bare_area = sum(bare_area, na.rm = TRUE), .groups = "drop") |>
+      filter(bare_area > 0)
+    message(sprintf(
+      "[fallback] Bare-area pairs: %d — %.1f min",
+      nrow(bgri_area_frags), as.numeric(difftime(Sys.time(), t0, units = "mins"))
+    ))
+    rm(bgri_area_frags_sf)
+  } else {
+    bgri_area_frags <- tibble(
+      id        = grid_active$id[0],
+      BGRI2021  = character(0),
+      bare_area = numeric(0)
+    )
+  }
+  rm(census_fallback)
 } else {
   bgri_area_frags <- NULL
 }
@@ -459,43 +484,67 @@ gc()
 message(sprintf("[weights] Preparing weights (mode: %s)...", DASYMETRIC_MODE))
 
 if (DASYMETRIC_MODE == "combined") {
-  all_pairs <- bgri_area_frags |>
-    left_join(vol_weights, by = c("id", "BGRI2021")) |>
-    left_join(cos_bgri_frags, by = c("id", "BGRI2021")) |>
+  # BGRI-level hierarchical assignment:
+  # 1. Priority 1 (Building volume inside residential COS):
+  #    For BGRIs that have residential building volume, use ONLY building volume.
+  pairs_vol <- vol_weights |>
     mutate(
-      weight_source = case_when(
-        !is.na(vol_weight) & vol_weight > 0 ~ "building_volume",
-        !is.na(cos_weight_sum) & cos_weight_sum > 0 ~ "cos_area",
-        TRUE ~ "bare_area"
-      ),
-      weight = case_when(
-        weight_source == "building_volume" ~ vol_weight,
-        weight_source == "cos_area" ~ cos_weight_sum,
-        TRUE ~ bare_area
-      )
-    )
+      weight_source = "building_volume",
+      weight        = vol_weight
+    ) |>
+    select(id, BGRI2021, weight_source, weight)
+
+  # 2. Priority 2 (COS residential land-use area):
+  #    For BGRIs with NO building volume, fall back to residential COS area.
+  bgri_with_vol <- unique(vol_weights$BGRI2021)
+  pairs_cos <- cos_bgri_frags |>
+    filter(!BGRI2021 %in% bgri_with_vol) |>
+    mutate(
+      weight_source = "cos_area",
+      weight        = cos_weight_sum
+    ) |>
+    select(id, BGRI2021, weight_source, weight)
+
+  # 3. Priority 3 (Raw BGRI area fallback for atlas/COS coverage gaps):
+  #    For BGRIs lacking both building volume and residential COS, fall back to bare area.
+  bgri_with_cos <- unique(cos_bgri_frags$BGRI2021)
+  pairs_area <- bgri_area_frags |>
+    filter(!BGRI2021 %in% bgri_with_vol, !BGRI2021 %in% bgri_with_cos) |>
+    mutate(
+      weight_source = "bare_area",
+      weight        = bare_area
+    ) |>
+    select(id, BGRI2021, weight_source, weight)
+
+  all_pairs <- bind_rows(pairs_vol, pairs_cos, pairs_area)
 } else if (DASYMETRIC_MODE == "cos_only") {
   # COS-only mode: strictly residential COS weights without fallback
   all_pairs <- cos_bgri_frags |>
     mutate(
       weight_source = "cos_area",
       weight        = cos_weight_sum
-    )
+    ) |>
+    select(id, BGRI2021, weight_source, weight)
 } else if (DASYMETRIC_MODE == "all_buildings") {
   # All-buildings mode: strictly building volume without fallback
   all_pairs <- vol_weights |>
     mutate(
       weight_source = "building_volume",
       weight        = vol_weight
-    )
+    ) |>
+    select(id, BGRI2021, weight_source, weight)
 }
 
 all_pairs <- all_pairs |> filter(weight > 0)
 
 weight_summary <- all_pairs |>
   group_by(weight_source) |>
-  summarise(n_pairs = n(), .groups = "drop") |>
-  mutate(pct = round(n_pairs / sum(n_pairs) * 100, 1))
+  summarise(
+    n_pairs = n(),
+    n_bgri  = n_distinct(BGRI2021),
+    .groups = "drop"
+  ) |>
+  mutate(pct_pairs = round(n_pairs / sum(n_pairs) * 100, 1))
 message("[weights] Weight source breakdown:")
 print(as.data.frame(weight_summary))
 
