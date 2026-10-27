@@ -589,14 +589,13 @@ h3_pop_table <- fragments_with_pop |>
   group_by(id) |>
   summarise(
     population_raw = sum(fragment_pop, na.rm = TRUE),
-    population = sum(fragment_pop, na.rm = TRUE),
-    buildings = sum(fragment_buildings, na.rm = TRUE),
-    buildings_pre1945 = sum(fragment_buildings_pre45, na.rm = TRUE),
-    households = sum(fragment_households, na.rm = TRUE),
-    youth = sum(fragment_youth, na.rm = TRUE),
-    adults = sum(fragment_adults, na.rm = TRUE),
-    elderly = sum(fragment_elderly, na.rm = TRUE),
-    women = sum(fragment_women, na.rm = TRUE),
+    buildings_raw = sum(fragment_buildings, na.rm = TRUE),
+    buildings_pre45_raw = sum(fragment_buildings_pre45, na.rm = TRUE),
+    households_raw = sum(fragment_households, na.rm = TRUE),
+    youth_raw = sum(fragment_youth, na.rm = TRUE),
+    adults_raw = sum(fragment_adults, na.rm = TRUE),
+    elderly_raw = sum(fragment_elderly, na.rm = TRUE),
+    women_raw = sum(fragment_women, na.rm = TRUE),
     # --- Debugging weights and sources ---
     weight_source = first(weight_source),
     weight_sources = paste(sort(unique(weight_source)), collapse = "+"),
@@ -626,22 +625,59 @@ grid_final <- grid |>
   left_join(h3_pop_table, by = "id") |>
   mutate(
     across(c(
-      population, population_raw, buildings, buildings_pre1945, households,
-      youth, adults, elderly, women, n_frags, n_bgri,
+      population_raw, buildings_raw, buildings_pre45_raw, households_raw,
+      youth_raw, adults_raw, elderly_raw, women_raw, n_frags, n_bgri,
       weight_total, weight_vol_sum, weight_cos_sum, weight_area_sum
     ), ~ replace_na(.x, 0)),
     weight_sources = replace_na(weight_sources, "none"),
-    across(c(population, buildings, buildings_pre1945, youth, adults, elderly, women), ceiling),
-    households = if_else(households > 0 & households < 1, 1, households),
+
+    # Primary discrete totals
+    population = ceiling(population_raw),
+    buildings = ceiling(buildings_raw),
+    buildings_pre1945 = pmin(buildings, ceiling(buildings_pre45_raw)),
+    households = if_else(population > 0 & households_raw > 0, pmax(1, pmin(population, round(households_raw))), 0),
     population_density = population / area_km2,
-    youth_ratio = if_else(population > 0, round(youth / population * 100, 2), 0),
-    elderly_ratio = if_else(population > 0, round(elderly / population * 100, 2), 0),
-    youth_dependency = if_else(adults > 0, round(youth / adults * 100, 2), 0),
-    elderly_dependency = if_else(adults > 0, round(elderly / adults * 100, 2), 0),
-    women_percentage = if_else(population > 0, round(women / population * 100, 2), 0),
+
+    # Indicator rates and proportions calculated from RAW fractions (prevents integer truncation artifacts)
+    youth_ratio = if_else(population_raw > 0, round(youth_raw / population_raw * 100, 2), 0),
+    elderly_ratio = if_else(population_raw > 0, round(elderly_raw / population_raw * 100, 2), 0),
+    youth_dependency = if_else(adults_raw > 0, round(youth_raw / adults_raw * 100, 2), 0),
+    elderly_dependency = if_else(adults_raw > 0, round(elderly_raw / adults_raw * 100, 2), 0),
+    women_percentage = if_else(population_raw > 0, round(women_raw / population_raw * 100, 2), 0),
+    buildings_pre1945_percentage = if_else(buildings_raw > 0, round(buildings_pre45_raw / buildings_raw * 100, 2), 0),
     pp_hh_avg = if_else(households >= 3, round(population / households, 2), NA_real_),
-    buildings_pre1945_percentage = if_else(buildings > 0, round(buildings_pre1945 / buildings * 100, 2), 0)
+
+    # Allocate discrete integer population to age groups consistently (youth + adults + elderly == population)
+    raw_age_sum = youth_raw + adults_raw + elderly_raw,
+    has_ages = raw_age_sum > 0 & population > 0,
+    py = if_else(has_ages, youth_raw / raw_age_sum, 0),
+    pa = if_else(has_ages, adults_raw / raw_age_sum, 1),
+    pe = if_else(has_ages, elderly_raw / raw_age_sum, 0),
+
+    fy = floor(population * py),
+    fa = floor(population * pa),
+    fe = floor(population * pe),
+
+    rem_age = population - (fy + fa + fe),
+    ry = (population * py) - fy,
+    ra = (population * pa) - fa,
+    re = (population * pe) - fe,
+
+    add_y = (rem_age >= 1 & ry >= ra & ry >= re) | (rem_age == 2 & (ry >= pmin(ra, re))),
+    rem_after_y = rem_age - as.integer(add_y),
+    add_a = (rem_after_y >= 1 & ra >= re) | (rem_after_y == 2),
+    rem_after_a = rem_after_y - as.integer(add_a),
+    add_e = rem_after_a >= 1,
+
+    youth = if_else(population > 0, fy + as.integer(add_y), 0),
+    adults = if_else(population > 0, fa + as.integer(add_a), 0),
+    elderly = if_else(population > 0, fe + as.integer(add_e), 0),
+    women = if_else(population > 0, pmin(population, round(population * if_else(population_raw > 0, women_raw / population_raw, 0))), 0)
   ) |>
+  select(-c(
+    raw_age_sum, has_ages, py, pa, pe, fy, fa, fe,
+    rem_age, ry, ra, re, add_y, rem_after_y, add_a, rem_after_a, add_e
+  )) |>
   mutate(
     youth_dependency   = if_else(is.nan(youth_dependency) | is.infinite(youth_dependency), 0, youth_dependency),
     elderly_dependency = if_else(is.nan(elderly_dependency) | is.infinite(elderly_dependency), 100, elderly_dependency),

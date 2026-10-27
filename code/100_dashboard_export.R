@@ -21,7 +21,18 @@ grid_dashboard <- grid |>
   left_join(
     grid_dasymetric |> select(
       gid,
-      # Raw
+      # Raw continuous (for parish/municipality aggregation)
+      any_of(c(
+        "population_raw",
+        population_adults_raw = "adults_raw",
+        population_youth_raw = "youth_raw",
+        population_elderly_raw = "elderly_raw",
+        population_women_raw = "women_raw",
+        "households_raw",
+        "buildings_raw",
+        buildings_pre1945_raw = "buildings_pre45_raw"
+      )),
+      # Discrete integer totals (for grid display)
       population,
       population_adults = adults, population_youth = youth, population_elderly = elderly, population_women = women,
       households,
@@ -80,9 +91,15 @@ names(grid_dashboard)
 ## Geographical aggregations ------------------------------------------------------
 col_to_agg <- c(
   # Raw data
-  # > Dasymetric map
-  dasymetric_population = "sum", dasymetric_population_adults = "sum", dasymetric_population_youth = "sum", dasymetric_population_elderly = "sum", dasymetric_population_women = "sum", dasymetric_households = "sum",
-  dasymetric_buildings = "sum", dasymetric_buildings_pre1945 = "sum",
+  # > Dasymetric map (aggregate raw continuous values to eliminate cumulative ceiling bias)
+  dasymetric_population_raw = "sum",
+  dasymetric_population_adults_raw = "sum",
+  dasymetric_population_youth_raw = "sum",
+  dasymetric_population_elderly_raw = "sum",
+  dasymetric_population_women_raw = "sum",
+  dasymetric_households_raw = "sum",
+  dasymetric_buildings_raw = "sum",
+  dasymetric_buildings_pre1945_raw = "sum",
   # > Infrastructure
   cycleways_length = "sum",
   cycleways_length_protected = "sum",
@@ -108,16 +125,59 @@ col_to_agg <- c(
 )
 
 cols_mutate <- function(aggregated_layer) {
-  return(aggregated_layer |> mutate(
-    # Composed
-    dasymetric_population_youth_percentage = if_else(dasymetric_population > 0, round(dasymetric_population_youth / dasymetric_population * 100, 2), 0),
-    dasymetric_population_elderly_percentage = if_else(dasymetric_population > 0, round(dasymetric_population_elderly / dasymetric_population * 100, 2), 0),
-    dasymetric_population_women_percentage = if_else(dasymetric_population > 0, round(dasymetric_population_women / dasymetric_population * 100, 2), 0),
-    dasymetric_dependency_ratio_youth = if_else(dasymetric_population_adults > 0, round(dasymetric_population_youth / dasymetric_population_adults * 100, 2), 0),
-    dasymetric_dependency_ratio_elderly = if_else(dasymetric_population_adults > 0, round(dasymetric_population_elderly / dasymetric_population_adults * 100, 2), 0),
-    dasymetric_pp_hh_avg = if_else(dasymetric_households >= 3, round(dasymetric_population / dasymetric_households, 2), NA_real_),
-    dasymetric_buildings_pre1945_percentage = if_else(dasymetric_buildings > 0, round(dasymetric_buildings_pre1945 / dasymetric_buildings * 100, 2), 0)
-  ))
+  aggregated_layer <- aggregated_layer |>
+    mutate(
+      # Discrete totals rounded/ceiled once at the aggregated layer
+      dasymetric_population = ceiling(dasymetric_population_raw),
+      dasymetric_buildings = ceiling(dasymetric_buildings_raw),
+      dasymetric_buildings_pre1945 = pmin(dasymetric_buildings, ceiling(dasymetric_buildings_pre1945_raw)),
+      dasymetric_households = if_else(dasymetric_population > 0 & dasymetric_households_raw > 0, 
+                                      pmax(1, pmin(dasymetric_population, round(dasymetric_households_raw))), 0),
+
+      # Indicators computed from raw continuous sums
+      dasymetric_population_youth_percentage = if_else(dasymetric_population_raw > 0, round(dasymetric_population_youth_raw / dasymetric_population_raw * 100, 2), 0),
+      dasymetric_population_elderly_percentage = if_else(dasymetric_population_raw > 0, round(dasymetric_population_elderly_raw / dasymetric_population_raw * 100, 2), 0),
+      dasymetric_population_women_percentage = if_else(dasymetric_population_raw > 0, round(dasymetric_population_women_raw / dasymetric_population_raw * 100, 2), 0),
+      dasymetric_dependency_ratio_youth = if_else(dasymetric_population_adults_raw > 0, round(dasymetric_population_youth_raw / dasymetric_population_adults_raw * 100, 2), 0),
+      dasymetric_dependency_ratio_elderly = if_else(dasymetric_population_adults_raw > 0, round(dasymetric_population_elderly_raw / dasymetric_population_adults_raw * 100, 2), 0),
+      dasymetric_pp_hh_avg = if_else(dasymetric_households >= 3, round(dasymetric_population / dasymetric_households, 2), NA_real_),
+      dasymetric_buildings_pre1945_percentage = if_else(dasymetric_buildings_raw > 0, round(dasymetric_buildings_pre1945_raw / dasymetric_buildings_raw * 100, 2), 0),
+
+      # Consistent integer demographic counts at the aggregated layer
+      raw_age_sum = dasymetric_population_youth_raw + dasymetric_population_adults_raw + dasymetric_population_elderly_raw,
+      has_ages = raw_age_sum > 0 & dasymetric_population > 0,
+      py = if_else(has_ages, dasymetric_population_youth_raw / raw_age_sum, 0),
+      pa = if_else(has_ages, dasymetric_population_adults_raw / raw_age_sum, 1),
+      pe = if_else(has_ages, dasymetric_population_elderly_raw / raw_age_sum, 0),
+
+      fy = floor(dasymetric_population * py),
+      fa = floor(dasymetric_population * pa),
+      fe = floor(dasymetric_population * pe),
+
+      rem_age = dasymetric_population - (fy + fa + fe),
+      ry = (dasymetric_population * py) - fy,
+      ra = (dasymetric_population * pa) - fa,
+      re = (dasymetric_population * pe) - fe,
+
+      add_y = (rem_age >= 1 & ry >= ra & ry >= re) | (rem_age == 2 & (ry >= pmin(ra, re))),
+      rem_after_y = rem_age - as.integer(add_y),
+      add_a = (rem_after_y >= 1 & ra >= re) | (rem_after_y == 2),
+      rem_after_a = rem_after_y - as.integer(add_a),
+      add_e = rem_after_a >= 1,
+
+      dasymetric_population_youth = if_else(dasymetric_population > 0, fy + as.integer(add_y), 0),
+      dasymetric_population_adults = if_else(dasymetric_population > 0, fa + as.integer(add_a), 0),
+      dasymetric_population_elderly = if_else(dasymetric_population > 0, fe + as.integer(add_e), 0),
+      dasymetric_population_women = if_else(dasymetric_population > 0, pmin(dasymetric_population, round(dasymetric_population * if_else(dasymetric_population_raw > 0, dasymetric_population_women_raw / dasymetric_population_raw, 0))), 0)
+    ) |>
+    select(-c(
+      dasymetric_population_raw, dasymetric_population_adults_raw, dasymetric_population_youth_raw,
+      dasymetric_population_elderly_raw, dasymetric_population_women_raw, dasymetric_households_raw,
+      dasymetric_buildings_raw, dasymetric_buildings_pre1945_raw,
+      raw_age_sum, has_ages, py, pa, pe, fy, fa, fe,
+      rem_age, ry, ra, re, add_y, rem_after_y, add_a, rem_after_a, add_e
+    ))
+  return(aggregated_layer)
 }
 
 ### Parishes ------------------------------------------------------
@@ -156,6 +216,11 @@ parishes_dashboard <- parishes_dashboard |>
 
 # Round all numeric values to 2 digits (except ID columns like gid, pid, mid, id, *_id)
 grid_dashboard <- grid_dashboard |>
+  select(-any_of(c(
+    "dasymetric_population_raw", "dasymetric_population_adults_raw", "dasymetric_population_youth_raw",
+    "dasymetric_population_elderly_raw", "dasymetric_population_women_raw", "dasymetric_households_raw",
+    "dasymetric_buildings_raw", "dasymetric_buildings_pre1945_raw"
+  ))) |>
   mutate(across(where(is.numeric) & !matches("(^|_)(id|gid|pid|mid|nid)$|^id$", ignore.case = TRUE), ~ round(., 2)))
 parishes_dashboard <- parishes_dashboard |>
   mutate(across(where(is.numeric) & !matches("(^|_)(id|gid|pid|mid|nid)$|^id$", ignore.case = TRUE), ~ round(., 2)))
