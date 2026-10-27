@@ -11,10 +11,10 @@
 #       Code for these is found in "biclar-parking/code/pois/02_schools_univ_agg"
 # Steps:
 # 0. Base code to define LMA bounds and standardize columns.
-# 1. Get all data possible from Carris Metropolitana.
-# 1.1. Facilities
-# 1.2. PT Stations
-# 1.3. Bus stops
+# 1. Get all data possible from Carris Metropolitana - NOT USED
+# 1.1. Facilities (using OSM)
+# 1.2. PT Stations (using TML data instead)
+# 1.3. Bus stops (using TML data instead)
 # 2. Get the remaining POIs from OSM.
 # 3. Combine all layers.
 # 4. Aggregated by grid cell.
@@ -222,15 +222,13 @@ osm_poi <- classify_osm(osm_all)
 
 # 3. Combine, clip, export individual points ---------------------------
 
-poi_all <- bind_rows(
-  cm_stations, cm_bus_stops, osm_poi
-) |>
+poi_all <- osm_poi |>
   select(all_of(standard_cols)) |>
   st_filter(aml_boundary) |>
   distinct(poi_id, name, category, .keep_all = TRUE)  # guards against feed re-runs, not cross-source dedup
 
 # validation printout -- check before exporting
-poi_all |> st_drop_geometry() |> count(category, source, sort = TRUE) |> print(n = 40)
+poi_all |> st_drop_geometry() |> count(category, source, sort = TRUE)
 
 # one GPKG per category
 poi_all |>
