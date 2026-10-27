@@ -73,13 +73,34 @@ poi_buildings <- poi_buildings |> # divide area of building if multiple POIs occ
 
 poi_buildings <- poi_buildings |> # assign median values of each category for POIs that fall outside buildings (poi_area == NA)
   group_by(category) |>
-  mutate(poi_area = coalesce(poi_area, median(poi_area, na.rm = TRUE))) |> # coalesce to maintain values where they exist, and to add the medians to NAs
-  ungroup()
+  mutate(poi_area = coalesce(poi_area, median(poi_area, na.rm = TRUE))) # coalesce to maintain values where they exist, and to add the medians to NAs
+
+
+# After the first iteration of this whole script, it was noticed that there were some extreme outliers on maximum POI areas, as is shown below:
+
+# Percentile          p50             p90             p95           p100
+# Area value          186.7           761.0           1451.8        67167.4
+
+# This way, values above p95 in each category are removed in the next lines.
+
+poi_buildings <- poi_buildings |> # remove outliers and give them the p95 value
+  group_by(category) |>
+    mutate(
+    p95      = quantile(poi_area, 0.95, na.rm = TRUE),
+    poi_area = if_else(poi_area > p95, p95, poi_area)
+  ) |>
+  ungroup() |>
+  select(-p95)
 
 poi_buildings <- poi_buildings |>
   select(poi_id, name, category, subcategory, poi_area, geometry)
 
-st_write(poi_buildings, "data/processed/poi/buildings/poi_buildings.gpkg", delete.dsn = TRUE, quiet = TRUE)
+
+View(poi_buildings)
+quantile(poi_buildings$poi_area, probs = seq(0,1,0.05))
+mapview(filter(poi_buildings, category == "office_industry"), zcol = "poi_area")
+
+st_write(poi_buildings, "data/processed/poi/buildings/poi_buildings.gpkg", delete_dsn = TRUE, quiet = TRUE)
 write_csv(poi_buildings |> st_drop_geometry(), "data/processed/poi/buildings/poi_buildings.csv")
 
 
