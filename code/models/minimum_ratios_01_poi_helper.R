@@ -132,7 +132,7 @@ poi_buildings_grid[is.na(poi_buildings_grid)] <- 0
 
 mapview(poi_buildings_grid, zcol="area_office_industry")
 st_write(poi_buildings_grid, "data/processed/poi/buildings/poi_buildings_grid.gpkg", delete_dsn = TRUE, quiet = TRUE)
-write_csv(poi_buildings_grid, "data/processed/poi/buildings/poi_buildings_grid.csv")
+write_csv(poi_buildings_grid |> st_drop_geometry(), "data/processed/poi/buildings/poi_buildings_grid.csv")
 
 
 

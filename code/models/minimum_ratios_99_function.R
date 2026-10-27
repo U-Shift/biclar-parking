@@ -46,9 +46,11 @@ residential_mr <- function(grid_gpkg, grid_csv, buildings_grid, ratios){
       ) |>
     left_join(ratios, by = "mid") |>
     mutate(
-      residential_parking_min = residential_min*n_households,
-      residential_parking_max = residential_max*n_households
-    )
+      parking_min_residential = n_households*min,
+      parking_max_residential = n_households*max
+    ) |>
+    select(-min, -max, -unit)
+
   return(parking_spots)
 }
 
@@ -57,10 +59,10 @@ residential_ratios <- read.csv("data/models/minimum_ratios/residential.csv")
 mrm_residential <- residential_mr(grid, grid_csv, grid_dasymetric, residential_ratios)
 
 View(mrm_residential)
-mapview(mrm_residential, zcol="residential_parking_min")
+mapview(mrm_residential, zcol="parking_min_residential")
 
 # 2. POI minimum ratios function -------------------
-# Function to calculate minimum number of parking spots for POIs in each grid cell.
+# Function to calculate minimum number of parking spots for points of interest (POIs) in each grid cell.
 # Parameters:
 # poi_grid - csv file with the area of each type of POI in each grid cell.
 # ratios - csv file with minimum and maximum parking ratio for each type of POI, as well as the respective unit.
@@ -68,7 +70,6 @@ mapview(mrm_residential, zcol="residential_parking_min")
 poi_mr <- function(poi_grid, ratios){
   parking_long <- poi_grid |>
     st_drop_geometry() |>
-    select(gid, starts_with("area_")) |>
     pivot_longer(      # turn the table longer, by creating a row for each poi category in each grid cell.
       cols = starts_with("area_"),
       names_to = "category",
@@ -77,24 +78,24 @@ poi_mr <- function(poi_grid, ratios){
     ) |>
     left_join(ratios, by = "category") |>
     mutate(
-      poi_parking_min = area*poi_min,
-      poi_parking_max = area*poi_max
+      parking_min = area*min,
+      parking_max = area*max
     )
 
   parking_wide <- parking_long |>
-    # Select all columns except poi_min, poi_max and poi_unit, since these ratios are the same everywhere, only depending on category.
+    # Select all columns except min, max and unit, since these ratios are the same everywhere, only depending on category.
     # They can be consulted in "data/models/minimum_ratios/poi.csv"
-    select(-poi_min, -poi_max, -poi_unit) |>
+    select(-min, -max, -unit) |>
     pivot_wider( # now turn the table wider again, to get one variable per category
       names_from = category,
-      values_from = c(area, poi_parking_min, poi_parking_max),
+      values_from = c(area, parking_min, parking_max),
       names_glue = "{.value}_{category}"
     )
   parking_total <- parking_long |>  # create an object with only the totals
     group_by(gid) |>
     summarise(
-      poi_parking_min_total = sum(poi_parking_min, na.rm = TRUE),
-      poi_parking_max_total = sum(poi_parking_max, na.rm = TRUE)
+      parking_min_poi = sum(parking_min, na.rm = TRUE),
+      parking_max_poi = sum(parking_max, na.rm = TRUE)
     ) |>
     ungroup()
 
@@ -104,22 +105,72 @@ poi_mr <- function(poi_grid, ratios){
   return(parking_final)
 }
 
-
 # grid_pois_area <- read.csv("data/processed/poi/buildings/poi_buildings_grid.csv")
 poi_ratios <- read.csv("data/models/minimum_ratios/poi.csv")
-mrm_poi <- poi_mr(grid_pois_area, poi_ratios)
+mrm_poi <- poi_mr(select(grid_pois_area, c(gid, starts_with("area_"))), poi_ratios)
 
 View(mrm_poi)
 mapview(mrm_poi, zcol = "poi_parking_max_total")
 
 
 # 3. PT minimum ratios function -------------------------------------------
+# Function to calculate minimum number of parking spots for public transport (PT) stops/stations in each grid cell.
+# Parameters:
+# pt_grid - csv file with the number of PT validations per mode in each grid cell.
+# ratios - csv file with minimum and maximum parking ratio for each type of PT station, as well as the respective unit.
 
+pt_mr <- function(pt_grid, ratios){
+  parking_long <- pt_grid |>
+    pivot_longer(      # turn the table longer, by creating a row for each pt mode ("category") in each grid cell.
+      cols = starts_with("n_"),
+      names_to = "category",
+      names_prefix = "n_",
+      values_to = "n_mode"
+    ) |>
+    left_join(ratios, by = "category") |>
+    mutate(
+      parking_min = n_mode*min,
+      parking_max = n_mode*max
+    )
+
+  parking_wide <- parking_long |>
+    # Select all columns except min, max and unit, since these ratios are the same everywhere, only depending on category.
+    # They can be consulted in "data/models/minimum_ratios/pt.csv"
+    select(-min, -max, -unit) |>
+    pivot_wider( # now turn the table wider again, to get one variable per mode ("category")
+      names_from = category,
+      values_from = c(n_mode, parking_min, parking_max),
+      names_glue = "{.value}_{category}"
+    )
+  parking_total <- parking_long |>  # create an object with only the totals
+    group_by(gid) |>
+    summarise(
+      parking_min_pt = sum(parking_min, na.rm = TRUE),
+      parking_max_pt = sum(parking_max, na.rm = TRUE)
+    ) |>
+    ungroup()
+
+  parking_final <- grid |>  # now join the ratios both by mode ("category") and total
+    left_join(parking_wide, by = "gid") |>
+    left_join(parking_total, by = "gid")
+
+  parking_final[is.na(parking_final)] <- 0
+  return(parking_final)
+}
+
+# grid_ticketing_global <- read.csv("data/analysis/ticketing/grid_ticketing_global.csv")
+pt_ratios <- read.csv("data/models/minimum_ratios/pt.csv")
+mrm_pt <- pt_mr(grid_ticketing_global, pt_ratios)
+
+View(mrm_pt)
+mapview(mrm_pt, zcol = "parking_min_pt")
 
 # 4. Schools minimum ratios function --------------------------------------
+
 
 
 # 5. Write outputs --------------------------------------------------------
 write.csv(mrm_residential |> st_drop_geometry(), "data/outputs/minimum_ratios/residential.csv", row.names = FALSE)
 write.csv(mrm_poi |> st_drop_geometry(), "data/outputs/minimum_ratios/poi.csv", row.names = FALSE)
+write.csv(mrm_pt |> st_drop_geometry(), "data/outputs/minimum_ratios/pt.csv", row.names = FALSE)
 
