@@ -225,6 +225,7 @@ osm_poi <- classify_osm(osm_all)
 poi_all <- osm_poi |>
   select(all_of(standard_cols)) |>
   st_filter(aml_boundary) |>
+  mutate(poi_id = row_number()) |>
   distinct(poi_id, name, category, .keep_all = TRUE)  # guards against feed re-runs, not cross-source dedup
 
 # validation printout -- check before exporting
