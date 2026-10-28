@@ -2,6 +2,8 @@
 
 library(sf)
 library(tidyverse)
+library(osmdata)
+library(logr) # install.packages("logr")
 
 source("code/00_data_load.R")
 
@@ -36,7 +38,9 @@ schools_students_n <- students_n |>
     filter(
         DISTRITO %in% c("Lisboa", "Setúbal"),
         NÍVEL_DE__ENSINO != "Educação pré-escolar",
-        MUNICÍPIO %in% municipalities_meta$name
+        MUNICÍPIO %in% municipalities_meta$name,
+        !is.na(TIPOLOGIA),
+        !is.na(ESCOLA)
     ) |>
     group_by(
         # Location
@@ -60,6 +64,7 @@ schools_students_n <- students_n |>
     )
 # View(schools_students_n)
 unique(schools_students_n$MUNICÍPIO)
+length(unique(schools_students_n$MUNICÍPIO))
 testthat::expect_equal(sort(unique(schools_students_n$MUNICÍPIO)), sort(municipalities_meta$name))
 
 # 2. Get school locations
@@ -76,9 +81,10 @@ schools_locations <- read.csv("data/raw/schools_universities/RedeEscolar.csv") |
 # View(schools_locations)
 
 unique(schools_locations$CONCELHO)
+length(unique(schools_locations$CONCELHO))
 testthat::expect_equal(sort(unique(schools_locations$CONCELHO)), sort(municipalities_meta$name))
 
-nrow(schools_students_n) # 1175
+nrow(schools_students_n) # 1156
 nrow(schools_locations) # 1277
 schools_locations_students <- schools_locations |>
     left_join(schools_students_n, by = c("NOME" = "ESCOLA", "CONCELHO" = "MUNICÍPIO")) |>
@@ -86,29 +92,135 @@ schools_locations_students <- schools_locations |>
     select(DISTRITO, CONCELHO, NOME, TIPOLOGIA, N_ESTUDANTES)
 
 nrow(schools_locations_students) # 1120
-nrow(schools_locations_students) / nrow(schools_locations) # 87.7%
+nrow(schools_locations_students) / nrow(schools_students_n) # 96.88%
 
 mapview::mapview(schools_locations_students, zcol = "N_ESTUDANTES")
 
-missing <- schools_locations |>
-    left_join(schools_students_n, by = c("NOME" = "ESCOLA", "CONCELHO" = "MUNICÍPIO")) |>
-    filter(is.na(N_ESTUDANTES))
-table(missing$CONCELHO)
-table(missing$CICLO)
+missing_students_locations <- schools_students_n |>
+    left_join(schools_locations, by = c("ESCOLA" = "NOME", "MUNICÍPIO" = "CONCELHO")) |>
+    filter(sf::st_is_empty(geometry))
+nrow(missing_students_locations) # 36
+table(missing_students_locations$NATUREZA)
+table(missing_students_locations$TIPOLOGIA)
+table(missing_students_locations$NIVEIS)
 
-sf::st_write(schools_locations, "data/processed/poi/schools/schools_students.gpkg", delete_dsn = TRUE)
+# 3. Query OSM (Nominatim) for missing schools and add unique matches
+query_osm_school <- function(escola, municipio) {
+    Sys.sleep(1) # Respect Nominatim 1 req/sec rate limit
+    q <- paste(escola, municipio, "Portugal", sep = ", ")
+
+    res <- tryCatch(
+        suppressWarnings(osmdata::getbb(q, format_out = "data.frame")),
+        error = function(e) NULL
+    )
+
+    if (is.null(res) || !is.data.frame(res) || nrow(res) == 0) {
+        logr::log_warning(sprintf("No match found for school %s in %s", escola, municipio))
+        return(NULL)
+    }
+
+    # Filter to school amenities to avoid false positives (e.g. bus stops or street names)
+    if ("class" %in% names(res) && any(res$class == "amenity")) {
+        res <- res |> filter(class == "amenity", type %in% c("school", "college", "kindergarten"))
+    }
+
+    # If multiple matches exist, prefer 'node' over 'way' / 'relation' when it resolves unambiguously
+    if (nrow(res) > 1 && "osm_type" %in% names(res) && any(res$osm_type == "node")) {
+        res_nodes <- res |> filter(osm_type == "node")
+        if (nrow(res_nodes) == 1) {
+            res <- res_nodes
+        }
+    }
+
+    # Only keep if there is a single unambiguous result
+    if (nrow(res) == 1) {
+        logr::log_info(sprintf("Unique match found for school %s in %s", escola, municipio))
+        return(tibble(
+            lat = as.numeric(res$lat[1]),
+            lon = as.numeric(res$lon[1])
+        ))
+    } else if (nrow(res) > 1) {
+        logr::log_warning(sprintf("Multiple matches found for school %s in %s", escola, municipio))
+    } else {
+        logr::log_warning(sprintf("No match found for school %s in %s", escola, municipio))
+    }
+    NULL
+}
+
+setubal_munis <- c("Alcochete", "Almada", "Barreiro", "Moita", "Montijo", "Palmela", "Seixal", "Sesimbra", "Setúbal")
+
+logr::log_open()
+missing_geocoded <- missing_students_locations |>
+    st_drop_geometry() |>
+    mutate(
+        osm_coord = purrr::map2(ESCOLA, MUNICÍPIO, query_osm_school, .progress = "Geocoding OSM")
+    ) |>
+    tidyr::unnest(osm_coord) |>
+    filter(!is.na(lat), !is.na(lon)) |>
+    st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
+    st_transform(3763) |>
+    transmute(
+        DISTRITO = ifelse(MUNICÍPIO %in% setubal_munis, "Setúbal", "Lisboa"),
+        CONCELHO = MUNICÍPIO,
+        NOME = ESCOLA,
+        TIPOLOGIA = TIPOLOGIA,
+        N_ESTUDANTES = N_ESTUDANTES
+    )
+logr::log_close()
+nrow(missing_geocoded) # 25
+nrow(missing_geocoded) / nrow(missing_students_locations) # 69.44%
+
+# 4. Manually add schools not found in OSM
+manual_schools <- tribble(
+    ~ESCOLA, ~MUNICÍPIO, ~lat, ~lon,
+    "Colégio Senhora da Boa Nova", "Cascais", 38.709556, -9.387266,
+    "Escola Nau", "Cascais", 38.707550, -9.288087,
+    "Centro de Apoio à Família Crescer para Integrar", "Cascais", 38.705033, -9.353837,
+    "Externato Liceal das Casas de S. Vicente de Paulo", "Lisboa", 38.759747, -9.152915,
+    "Nuclisol Jean Piaget - Bairro do Condado", "Lisboa", 38.743592, -9.111564,
+    "Externato Primário da Associação Pró-Infância Santo António de Lisboa", "Lisboa", 38.723754, -9.135027,
+    "Colégio Oriente", "Loures", 38.785399, -9.097885,
+    "Jardim de Infância A Palmeira", "Seixal", 38.628089, -9.122673,
+    "Externato de Ensino Primário do Centro Paroquial de São João das Lampas", "Sintra", 38.875991, -9.397662,
+    "HYPHA International School", "Sintra", 38.816008, -9.440023,
+    "Jardim de Infância do Posto Assistência Social da Malveira", "Mafra", 38.933525, -9.257217
+)
+
+manual_geocoded <- missing_students_locations |>
+    st_drop_geometry() |>
+    inner_join(manual_schools, by = c("ESCOLA", "MUNICÍPIO")) |>
+    st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
+    st_transform(3763) |>
+    transmute(
+        DISTRITO = ifelse(MUNICÍPIO %in% setubal_munis, "Setúbal", "Lisboa"),
+        CONCELHO = MUNICÍPIO,
+        NOME = ESCOLA,
+        TIPOLOGIA = TIPOLOGIA,
+        N_ESTUDANTES = N_ESTUDANTES
+    )
+
+# Add recovered schools to schools_locations_students
+schools_locations_students_final <- bind_rows(
+    schools_locations_students,
+    missing_geocoded,
+    manual_geocoded
+)
+nrow(schools_locations_students_final) # 1156
+nrow(schools_locations_students_final) / nrow(schools_students_n) # 100%
+
+sf::st_write(schools_locations_students_final, "data/processed/poi/schools/schools_students.gpkg", delete_dsn = TRUE)
 
 # Aggregate at grid
 grid_schools <- grid |>
     st_transform(4326) |>
-    st_join(schools_locations_students |> st_transform(4326), join = st_intersects) |>
+    st_join(schools_locations_students_final |> st_transform(4326), join = st_intersects) |>
     group_by(gid) |>
     summarise(
         n_students = sum(N_ESTUDANTES, na.rm = TRUE),
         n_schools = n_distinct(NOME, na.rm = TRUE)
     )
-mapview::mapview(grid_schools |> filter(n_schools!=0), zcol = "n_students")
-mapview::mapview(grid_schools |> filter(n_schools!=0), zcol = "n_schools")
+mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_students")
+mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_schools")
 
 sf::st_write(grid_schools, "data/processed/poi/schools/grid_schools_students.gpkg", delete_dsn = TRUE)
 write.csv(grid_schools |> st_drop_geometry(), "data/processed/poi/schools/grid_schools_students.csv")
