@@ -102,7 +102,7 @@ table(missing_students_locations$NATUREZA)
 table(missing_students_locations$TIPOLOGIA)
 table(missing_students_locations$NIVEIS)
 
-# 3. Query OSM (Nominatim) for missing schools and add unique matches
+# 3. Geocode missing schools using OSM (Nominatim) with ArcGIS fallback
 query_osm_school <- function(escola, municipio) {
     Sys.sleep(1) # Respect Nominatim 1 req/sec rate limit
     q <- paste(escola, municipio, "Portugal", sep = ", ")
@@ -113,7 +113,6 @@ query_osm_school <- function(escola, municipio) {
     )
 
     if (is.null(res) || !is.data.frame(res) || nrow(res) == 0) {
-        logr::log_warning(sprintf("No match found for school %s in %s", escola, municipio))
         return(NULL)
     }
 
@@ -132,16 +131,63 @@ query_osm_school <- function(escola, municipio) {
 
     # Only keep if there is a single unambiguous result
     if (nrow(res) == 1) {
-        logr::log_info(sprintf("Unique match found for school %s in %s", escola, municipio))
+        logr::log_info(sprintf("OSM match found for school %s in %s", escola, municipio))
         return(tibble(
             lat = as.numeric(res$lat[1]),
             lon = as.numeric(res$lon[1])
         ))
-    } else if (nrow(res) > 1) {
-        logr::log_warning(sprintf("Multiple matches found for school %s in %s", escola, municipio))
-    } else {
-        logr::log_warning(sprintf("No match found for school %s in %s", escola, municipio))
     }
+    NULL
+}
+
+query_arcgis_school <- function(escola, municipio) {
+    Sys.sleep(0.2)
+    q <- paste(escola, municipio, "Portugal", sep = ", ")
+    url <- paste0(
+        "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=",
+        URLencode(q),
+        "&f=json&maxLocations=1&outFields=Addr_type,Type,Score,Match_addr"
+    )
+
+    res <- tryCatch(
+        jsonlite::fromJSON(url),
+        error = function(e) NULL
+    )
+
+    if (!is.null(res$candidates) && is.data.frame(res$candidates) && nrow(res$candidates) > 0) {
+        cand <- res$candidates[1, ]
+        addr_type <- if ("attributes" %in% names(cand) && "Addr_type" %in% names(cand$attributes)) {
+            cand$attributes$Addr_type[1]
+        } else if ("attributes.Addr_type" %in% names(cand)) {
+            cand$attributes.Addr_type[1]
+        } else {
+            ""
+        }
+        score <- cand$score[1]
+
+        # Only accept confident POI or street address matches (excludes broad municipality/locality matches)
+        if (score >= 80 && addr_type %in% c("POI", "PointAddress", "StreetAddress")) {
+            logr::log_info(sprintf("ArcGIS match found for school %s in %s (score: %.1f, type: %s)",
+                                   escola, municipio, score, addr_type))
+            return(tibble(
+                lat = as.numeric(cand$location$y[1]),
+                lon = as.numeric(cand$location$x[1])
+            ))
+        }
+    }
+    NULL
+}
+
+geocode_school <- function(escola, municipio) {
+    # 1. Try OSM first
+    res <- query_osm_school(escola, municipio)
+    if (!is.null(res)) return(res)
+
+    # 2. Fallback to ArcGIS
+    res_arcgis <- query_arcgis_school(escola, municipio)
+    if (!is.null(res_arcgis)) return(res_arcgis)
+
+    logr::log_warning(sprintf("No match found (OSM & ArcGIS) for school %s in %s", escola, municipio))
     NULL
 }
 
@@ -151,9 +197,9 @@ logr::log_open()
 missing_geocoded <- missing_students_locations |>
     st_drop_geometry() |>
     mutate(
-        osm_coord = purrr::map2(ESCOLA, MUNICÍPIO, query_osm_school, .progress = "Geocoding OSM")
+        geocoded_coord = purrr::map2(ESCOLA, MUNICÍPIO, geocode_school, .progress = "Geocoding (OSM + ArcGIS)")
     ) |>
-    tidyr::unnest(osm_coord) |>
+    tidyr::unnest(geocoded_coord) |>
     filter(!is.na(lat), !is.na(lon)) |>
     st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
     st_transform(3763) |>
@@ -166,27 +212,20 @@ missing_geocoded <- missing_students_locations |>
         N_ESTUDANTES = N_ESTUDANTES
     )
 logr::log_close()
-nrow(missing_geocoded) # 61
-nrow(missing_geocoded) / nrow(missing_students_locations) # 29.32%
+nrow(missing_geocoded) # 153
+nrow(missing_geocoded) / nrow(missing_students_locations) # 73.56%
 
 # 4. Manually add schools not found in OSM
 manual_schools <- tribble(
     ~ESCOLA, ~MUNICÍPIO, ~lat, ~lon,
-    "Colégio Senhora da Boa Nova", "Cascais", 38.709556, -9.387266,
-    "Escola Nau", "Cascais", 38.707550, -9.288087,
     "Centro de Apoio à Família Crescer para Integrar", "Cascais", 38.705033, -9.353837,
-    "Externato Liceal das Casas de S. Vicente de Paulo", "Lisboa", 38.759747, -9.152915,
-    "Nuclisol Jean Piaget - Bairro do Condado", "Lisboa", 38.743592, -9.111564,
-    "Externato Primário da Associação Pró-Infância Santo António de Lisboa", "Lisboa", 38.723754, -9.135027,
-    "Colégio Oriente", "Loures", 38.785399, -9.097885,
     "Jardim de Infância A Palmeira", "Seixal", 38.628089, -9.122673,
-    "Externato de Ensino Primário do Centro Paroquial de São João das Lampas", "Sintra", 38.875991, -9.397662,
-    "HYPHA International School", "Sintra", 38.816008, -9.440023,
     "Jardim de Infância do Posto Assistência Social da Malveira", "Mafra", 38.933525, -9.257217
 )
 
 manual_geocoded <- missing_students_locations |>
     st_drop_geometry() |>
+    anti_join(missing_geocoded, by = c("ESCOLA" = "NOME", "MUNICÍPIO" = "CONCELHO")) |>
     inner_join(manual_schools, by = c("ESCOLA", "MUNICÍPIO")) |>
     st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
     st_transform(3763) |>
@@ -225,8 +264,10 @@ schools_locations_students_final <- bind_rows(
 testthat::expect_equal(schools_locations_students_final |> filter(primary_school & secondary_school & childcare) |> nrow(), 0)
 testthat::expect_equal(schools_locations_students_final |> filter(primary_school | secondary_school | childcare) |> nrow(), nrow(schools_locations_students_final))
 
-nrow(schools_locations_students_final) # 1699
-nrow(schools_locations_students_final) / nrow(schools_students_n) # 92.48%
+nrow(schools_locations_students_final) # 1785
+nrow(schools_locations_students_final) - nrow(schools_students_n) # 52
+nrow(schools_locations_students_final) / nrow(schools_students_n) # 97.16%
+# View(schools_locations_students_final |> st_transform(4326))
 
 mapview::mapview(schools_locations_students_final, zcol = "N_ESTUDANTES") +
     mapview::mapview(schools_locations_students_final |> filter(secondary_school), zcol = "N_ESTUDANTES", hide = TRUE) +
@@ -244,8 +285,10 @@ grid_schools <- grid |>
     summarise(
         n_students = sum(N_ESTUDANTES, na.rm = TRUE),
         n_schools = n_distinct(NOME, na.rm = TRUE),
+        n_students_childcare = sum(N_ESTUDANTES * childcare, na.rm = TRUE),
         n_students_primary_school = sum(N_ESTUDANTES * primary_school, na.rm = TRUE),
         n_students_secondary_school = sum(N_ESTUDANTES * secondary_school, na.rm = TRUE),
+        n_schools_childcare = sum(childcare, na.rm = TRUE),
         n_schools_primary_school = sum(primary_school, na.rm = TRUE),
         n_schools_secondary_school = sum(secondary_school, na.rm = TRUE)
     )
@@ -253,7 +296,8 @@ grid_schools <- grid |>
 mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_students") +
     mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_schools", hide = TRUE) +
     mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_schools_primary_school", hide = TRUE) +
-    mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_schools_secondary_school", hide = TRUE) 
+    mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_schools_secondary_school", hide = TRUE) + 
+    mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_schools_childcare", hide = TRUE)
 
 sf::st_write(grid_schools, "data/processed/poi/schools/grid_schools_students.gpkg", delete_dsn = TRUE)
 write.csv(grid_schools |> st_drop_geometry(), "data/processed/poi/schools/grid_schools_students.csv")
