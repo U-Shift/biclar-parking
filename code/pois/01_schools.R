@@ -12,6 +12,15 @@ source("code/00_data_load.R")
 # $ sudo R CMD javareconf
 # $ find /usr/lib/jvm -name "libjvm.so" # Replace output in the next command
 # > dyn.load('/usr/lib/jvm/java-21-openjdk-amd64/lib/server/libjvm.so', local = FALSE)
+#
+# To use Google Maps Geocoding as a fallback (3rd resource):
+# 1. Go to Google Cloud Console (https://console.cloud.google.com/) and create/select a project.
+# 2. Enable billing (Google provides a recurring $200 monthly credit, covering ~40,000 requests/month).
+# 3. Enable the "Geocoding API" under APIs & Services > Library.
+# 4. Create an API key under APIs & Services > Credentials (optionally restrict it to "Geocoding API").
+# 5. Add the key to your environment: run `usethis::edit_r_environ()` or create ~/.Renviron or .Renviron:
+#    GOOGLE_MAPS_KEY="AIzaSy..."
+# 6. Restart your R session so Sys.getenv("GOOGLE_MAPS_KEY") picks it up.
 
 # 1. Get number of students for each school
 students_n_file <- tempfile(fileext = ".xlsx")
@@ -178,6 +187,9 @@ query_arcgis_school <- function(escola, municipio) {
     NULL
 }
 
+# 3c. Query Google Maps Geocoding API (Fallback 2)
+# Requires GOOGLE_MAPS_KEY environment variable (see top of file for setup instructions).
+# Returns NULL if no key is set or if school cannot be resolved.
 query_google_school <- function(escola, municipio, api_key = Sys.getenv("GOOGLE_MAPS_KEY")) {
     if (api_key == "") {
         return(NULL)
@@ -259,7 +271,15 @@ manual_schools <- tribble(
     ~ESCOLA, ~MUNICÍPIO, ~lat, ~lon,
     "Centro de Apoio à Família Crescer para Integrar", "Cascais", 38.705033, -9.353837,
     "Jardim de Infância A Palmeira", "Seixal", 38.628089, -9.122673,
-    "Jardim de Infância do Posto Assistência Social da Malveira", "Mafra", 38.933525, -9.257217
+    "Jardim de Infância do Posto Assistência Social da Malveira", "Mafra", 38.933525, -9.257217,
+    "C. Comunitário Promoção Soc. Feijó e Laranjeiro", "Almada", 38.655155, -9.160754,
+    "Oficina da Phantasia", "Almada", 38.642740, -9.229696,
+    "Casa da Infância de Santa Quitéria - Fundação Dom Pedro Iv", "Lisboa", 38.717319, -9.158061,
+    "Centro Infantil O Patronato (Centro Assist.Paroq. da Amora)", "Seixal", 38.628587, -9.115810,
+    "C. Paroq. B. Estar Social de Arrentela - Jardim Infantil O Picapau", "Seixal", 38.638248, -9.096375,
+    "Jardim de Infância da Unidade Integrada de Atendimento à Distância", "Sesimbra", 38.471107, -9.094717,
+    "Os Pirilampos (Associação Central Assist. de Setúbal)", "Setúbal", 38.527288, -8.882930,
+    "Jardim de Infância da Associação de Actividades de Tempos Livres de Bolonha", "Vila Franca de Xira", 38.859700, -9.076168
 )
 
 manual_geocoded <- missing_students_locations |>
@@ -284,9 +304,11 @@ schools_locations_students_final <- bind_rows(
     manual_geocoded
 ) 
 
-nrow(schools_locations_students_final) # 1829
-nrow(schools_locations_students_final) - nrow(schools_students_n) # 8
-nrow(schools_locations_students_final) / nrow(schools_students_n) # 99.56%
+nrow(schools_locations_students_final) # 1837
+# View(schools_locations_students_final |> group_by(CONCELHO, NOME) |> summarise(n = n())) # Find duplicates
+
+nrow(schools_locations_students_final) - nrow(schools_students_n) # 0
+nrow(schools_locations_students_final) / nrow(schools_students_n) # 100%
 # View(schools_locations_students_final |> st_transform(4326))
 
 
@@ -343,9 +365,16 @@ schools_locations_students_by_level = schools_locations_students_by_level_origin
 
 testthat::expect_equal(schools_locations_students_by_level |> filter(primary_school & secondary_school & childcare) |> nrow(), 0)
 testthat::expect_equal(schools_locations_students_by_level |> filter(primary_school | secondary_school | childcare) |> nrow(), nrow(schools_locations_students_by_level))
+testthat::expect_equal(sum(schools_locations_students_by_level$N_ESTUDANTES), sum((students_n |>
+    filter(
+        DISTRITO %in% c("Lisboa", "Setúbal"),
+        MUNICÍPIO %in% municipalities_meta$name,
+        !is.na(TIPOLOGIA),
+        !is.na(ESCOLA)
+    ))$NÚMERO_DE_ALUNOS_MATRICULADOS))
 
-nrow(schools_locations_students_by_level) # 2716
-nrow(schools_locations_students_by_level) / nrow(schools_locations_students_by_level_original) # 99.70
+nrow(schools_locations_students_by_level) # 2724
+nrow(schools_locations_students_by_level) / nrow(schools_locations_students_by_level_original) # 100%
 
 mapview::mapview(schools_locations_students_by_level, zcol = "N_ESTUDANTES") +
     mapview::mapview(schools_locations_students_by_level |> filter(secondary_school), zcol = "N_ESTUDANTES", hide = TRUE) +
