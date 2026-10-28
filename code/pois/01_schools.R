@@ -89,7 +89,7 @@ nrow(schools_locations) # 1277
 schools_locations_students <- schools_locations |>
     left_join(schools_students_n, by = c("NOME" = "ESCOLA", "CONCELHO" = "MUNICÍPIO")) |>
     filter(!is.na(N_ESTUDANTES)) |>
-    select(DISTRITO, CONCELHO, NOME, TIPOLOGIA, N_ESTUDANTES)
+    select(DISTRITO, CONCELHO, NOME, TIPOLOGIA, N_ESTUDANTES, NIVEIS)
 
 nrow(schools_locations_students) # 1120
 nrow(schools_locations_students) / nrow(schools_students_n) # 96.88%
@@ -164,6 +164,7 @@ missing_geocoded <- missing_students_locations |>
         CONCELHO = MUNICÍPIO,
         NOME = ESCOLA,
         TIPOLOGIA = TIPOLOGIA,
+        NIVEIS = NIVEIS,
         N_ESTUDANTES = N_ESTUDANTES
     )
 logr::log_close()
@@ -196,6 +197,7 @@ manual_geocoded <- missing_students_locations |>
         CONCELHO = MUNICÍPIO,
         NOME = ESCOLA,
         TIPOLOGIA = TIPOLOGIA,
+        NIVEIS = NIVEIS,
         N_ESTUDANTES = N_ESTUDANTES
     )
 
@@ -204,9 +206,28 @@ schools_locations_students_final <- bind_rows(
     schools_locations_students,
     missing_geocoded,
     manual_geocoded
+) |> mutate(
+    # School type, for minimum rations
+    secondary_school = case_when(
+        grepl("secundário", NIVEIS) ~ TRUE,
+        TRUE ~ FALSE
+    ),
+    primary_school = case_when(
+        grepl("secundário", NIVEIS) ~ FALSE,
+        grepl("básico", NIVEIS) ~ TRUE,
+        TRUE ~ FALSE
+    )
 )
+testthat::expect_equal(schools_locations_students_final |> filter(primary_school & secondary_school) |> nrow(), 0)
+testthat::expect_equal(schools_locations_students_final |> filter(primary_school | secondary_school) |> nrow(), nrow(schools_locations_students_final))
+
 nrow(schools_locations_students_final) # 1156
 nrow(schools_locations_students_final) / nrow(schools_students_n) # 100%
+
+mapview::mapview(schools_locations_students_final, zcol = "N_ESTUDANTES") +
+    mapview::mapview(schools_locations_students_final |> filter(secondary_school), zcol = "N_ESTUDANTES", hide = TRUE) +
+    mapview::mapview(schools_locations_students_final |> filter(primary_school), zcol = "N_ESTUDANTES", hide = TRUE)
+
 
 sf::st_write(schools_locations_students_final, "data/processed/poi/schools/schools_students.gpkg", delete_dsn = TRUE)
 
@@ -217,10 +238,17 @@ grid_schools <- grid |>
     group_by(gid) |>
     summarise(
         n_students = sum(N_ESTUDANTES, na.rm = TRUE),
-        n_schools = n_distinct(NOME, na.rm = TRUE)
+        n_schools = n_distinct(NOME, na.rm = TRUE),
+        n_students_primary_school = sum(N_ESTUDANTES * primary_school, na.rm = TRUE),
+        n_students_secondary_school = sum(N_ESTUDANTES * secondary_school, na.rm = TRUE),
+        n_schools_primary_school = sum(primary_school, na.rm = TRUE),
+        n_schools_secondary_school = sum(secondary_school, na.rm = TRUE)
     )
-mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_students")
-mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_schools")
+
+mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_students") +
+    mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_schools", hide = TRUE) +
+    mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_schools_primary_school", hide = TRUE) +
+    mapview::mapview(grid_schools |> filter(n_schools != 0), zcol = "n_schools_secondary_school", hide = TRUE) 
 
 sf::st_write(grid_schools, "data/processed/poi/schools/grid_schools_students.gpkg", delete_dsn = TRUE)
 write.csv(grid_schools |> st_drop_geometry(), "data/processed/poi/schools/grid_schools_students.csv")
