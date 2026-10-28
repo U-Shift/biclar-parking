@@ -37,7 +37,6 @@ unique(students_n$MUNICÍPIO)
 schools_students_n <- students_n |>
     filter(
         DISTRITO %in% c("Lisboa", "Setúbal"),
-        NÍVEL_DE__ENSINO != "Educação pré-escolar",
         MUNICÍPIO %in% municipalities_meta$name,
         !is.na(TIPOLOGIA),
         !is.na(ESCOLA)
@@ -73,7 +72,6 @@ schools_locations <- read.csv("data/raw/schools_universities/RedeEscolar.csv") |
     filter(
         DISTRITO %in% c("Lisboa", "Setúbal"),
         CONCELHO %in% municipalities_meta$name,
-        !(CICLO %in% c("Pré-escolar", "Extra-escolar")),
         !is.na(x)
     ) |>
     sf::st_as_sf(coords = c("x", "y"), crs = 3763) |>
@@ -84,22 +82,22 @@ unique(schools_locations$CONCELHO)
 length(unique(schools_locations$CONCELHO))
 testthat::expect_equal(sort(unique(schools_locations$CONCELHO)), sort(municipalities_meta$name))
 
-nrow(schools_students_n) # 1156
-nrow(schools_locations) # 1277
+nrow(schools_students_n) # 1837
+nrow(schools_locations) # 1936
 schools_locations_students <- schools_locations |>
     left_join(schools_students_n, by = c("NOME" = "ESCOLA", "CONCELHO" = "MUNICÍPIO")) |>
     filter(!is.na(N_ESTUDANTES)) |>
     select(DISTRITO, CONCELHO, NOME, TIPOLOGIA, N_ESTUDANTES, NIVEIS)
 
-nrow(schools_locations_students) # 1120
-nrow(schools_locations_students) / nrow(schools_students_n) # 96.88%
+nrow(schools_locations_students) # 1629
+nrow(schools_locations_students) / nrow(schools_students_n) # 88.67%
 
 mapview::mapview(schools_locations_students, zcol = "N_ESTUDANTES")
 
 missing_students_locations <- schools_students_n |>
     left_join(schools_locations, by = c("ESCOLA" = "NOME", "MUNICÍPIO" = "CONCELHO")) |>
     filter(sf::st_is_empty(geometry))
-nrow(missing_students_locations) # 36
+nrow(missing_students_locations) # 208
 table(missing_students_locations$NATUREZA)
 table(missing_students_locations$TIPOLOGIA)
 table(missing_students_locations$NIVEIS)
@@ -168,8 +166,8 @@ missing_geocoded <- missing_students_locations |>
         N_ESTUDANTES = N_ESTUDANTES
     )
 logr::log_close()
-nrow(missing_geocoded) # 25
-nrow(missing_geocoded) / nrow(missing_students_locations) # 69.44%
+nrow(missing_geocoded) # 61
+nrow(missing_geocoded) / nrow(missing_students_locations) # 29.32%
 
 # 4. Manually add schools not found in OSM
 manual_schools <- tribble(
@@ -216,17 +214,24 @@ schools_locations_students_final <- bind_rows(
         grepl("secundário", NIVEIS) ~ FALSE,
         grepl("básico", NIVEIS) ~ TRUE,
         TRUE ~ FALSE
+    ),
+    childcare = case_when(
+        grepl("secundário", NIVEIS) ~ FALSE,
+        grepl("básico", NIVEIS) ~ FALSE,
+        grepl("pré-escolar", NIVEIS) ~ TRUE,
+        TRUE ~ FALSE
     )
 )
-testthat::expect_equal(schools_locations_students_final |> filter(primary_school & secondary_school) |> nrow(), 0)
-testthat::expect_equal(schools_locations_students_final |> filter(primary_school | secondary_school) |> nrow(), nrow(schools_locations_students_final))
+testthat::expect_equal(schools_locations_students_final |> filter(primary_school & secondary_school & childcare) |> nrow(), 0)
+testthat::expect_equal(schools_locations_students_final |> filter(primary_school | secondary_school | childcare) |> nrow(), nrow(schools_locations_students_final))
 
-nrow(schools_locations_students_final) # 1156
-nrow(schools_locations_students_final) / nrow(schools_students_n) # 100%
+nrow(schools_locations_students_final) # 1699
+nrow(schools_locations_students_final) / nrow(schools_students_n) # 92.48%
 
 mapview::mapview(schools_locations_students_final, zcol = "N_ESTUDANTES") +
     mapview::mapview(schools_locations_students_final |> filter(secondary_school), zcol = "N_ESTUDANTES", hide = TRUE) +
-    mapview::mapview(schools_locations_students_final |> filter(primary_school), zcol = "N_ESTUDANTES", hide = TRUE)
+    mapview::mapview(schools_locations_students_final |> filter(primary_school), zcol = "N_ESTUDANTES", hide = TRUE) + 
+  mapview::mapview(schools_locations_students_final |> filter(childcare), zcol = "N_ESTUDANTES", hide = TRUE)
 
 
 sf::st_write(schools_locations_students_final, "data/processed/poi/schools/schools_students.gpkg", delete_dsn = TRUE)
