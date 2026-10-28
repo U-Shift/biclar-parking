@@ -243,44 +243,82 @@ schools_locations_students_final <- bind_rows(
     schools_locations_students,
     missing_geocoded,
     manual_geocoded
-) |> mutate(
-    # School type, for minimum rations
-    secondary_school = case_when(
-        grepl("secundário", NIVEIS) ~ TRUE,
-        TRUE ~ FALSE
-    ),
-    primary_school = case_when(
-        grepl("secundário", NIVEIS) ~ FALSE,
-        grepl("básico", NIVEIS) ~ TRUE,
-        TRUE ~ FALSE
-    ),
-    childcare = case_when(
-        grepl("secundário", NIVEIS) ~ FALSE,
-        grepl("básico", NIVEIS) ~ FALSE,
-        grepl("pré-escolar", NIVEIS) ~ TRUE,
-        TRUE ~ FALSE
-    )
-)
-testthat::expect_equal(schools_locations_students_final |> filter(primary_school & secondary_school & childcare) |> nrow(), 0)
-testthat::expect_equal(schools_locations_students_final |> filter(primary_school | secondary_school | childcare) |> nrow(), nrow(schools_locations_students_final))
+) 
 
 nrow(schools_locations_students_final) # 1785
 nrow(schools_locations_students_final) - nrow(schools_students_n) # 52
 nrow(schools_locations_students_final) / nrow(schools_students_n) # 97.16%
 # View(schools_locations_students_final |> st_transform(4326))
 
-mapview::mapview(schools_locations_students_final, zcol = "N_ESTUDANTES") +
-    mapview::mapview(schools_locations_students_final |> filter(secondary_school), zcol = "N_ESTUDANTES", hide = TRUE) +
-    mapview::mapview(schools_locations_students_final |> filter(primary_school), zcol = "N_ESTUDANTES", hide = TRUE) + 
-  mapview::mapview(schools_locations_students_final |> filter(childcare), zcol = "N_ESTUDANTES", hide = TRUE)
 
+# 5. Associate locations to schools disaggregated by level 
+schools_locations_students_by_level_original <- students_n |>
+    filter(
+        DISTRITO %in% c("Lisboa", "Setúbal"),
+        MUNICÍPIO %in% municipalities_meta$name,
+        !is.na(TIPOLOGIA),
+        !is.na(ESCOLA)
+    ) |>
+    group_by(
+        # Location
+        MUNICÍPIO,
+        # School identifier
+        CÓDIGO_DGEEC_AGRUPAMENTO, CÓDIGO_DGEEC_ESCOLA, ESCOLA,
+        # School category
+        TIPOLOGIA, NATUREZA,
+        # Grade
+        NÍVEL_DE__ENSINO
+    ) |> summarise(
+        N_ESTUDANTES = sum(NÚMERO_DE_ALUNOS_MATRICULADOS)
+    ) |>
+    mutate(
+        # Remove quotes from text on ESCOLA
+        ESCOLA = gsub('"', "", ESCOLA)
+    )
 
-sf::st_write(schools_locations_students_final, "data/processed/poi/schools/schools_students.gpkg", delete_dsn = TRUE)
+nrow(schools_locations_students_by_level) # 2724
+
+schools_locations_students_by_level = schools_locations_students_by_level_original|>
+    select(CONCELHO = MUNICÍPIO, NOME = ESCOLA, NIVEL = NÍVEL_DE__ENSINO, N_ESTUDANTES) |>
+    left_join(schools_locations_students_final |> select(CONCELHO, NOME, geometry)) |>
+    filter(!sf::st_is_empty(geometry)) |>
+    sf::st_as_sf() |> 
+    mutate(
+        # School type, for minimum rations
+        secondary_school = case_when(
+            grepl("secundário", NIVEL) ~ TRUE,
+            TRUE ~ FALSE
+        ),
+        primary_school = case_when(
+            grepl("secundário", NIVEL) ~ FALSE,
+            grepl("básico", NIVEL) ~ TRUE,
+            TRUE ~ FALSE
+        ),
+        childcare = case_when(
+            grepl("secundário", NIVEL) ~ FALSE,
+            grepl("básico", NIVEL) ~ FALSE,
+            grepl("pré-escolar", NIVEL) ~ TRUE,
+            TRUE ~ FALSE
+        )
+    )
+
+testthat::expect_equal(schools_locations_students_by_level |> filter(primary_school & secondary_school & childcare) |> nrow(), 0)
+testthat::expect_equal(schools_locations_students_by_level |> filter(primary_school | secondary_school | childcare) |> nrow(), nrow(schools_locations_students_by_level))
+
+nrow(schools_locations_students_by_level) # 2672
+nrow(schools_locations_students_by_level) / nrow(schools_locations_students_by_level_original) # 98.09
+
+mapview::mapview(schools_locations_students_by_level, zcol = "N_ESTUDANTES") +
+    mapview::mapview(schools_locations_students_by_level |> filter(secondary_school), zcol = "N_ESTUDANTES", hide = TRUE) +
+    mapview::mapview(schools_locations_students_by_level |> filter(primary_school), zcol = "N_ESTUDANTES", hide = TRUE) + 
+    mapview::mapview(schools_locations_students_by_level |> filter(childcare), zcol = "N_ESTUDANTES", hide = TRUE)
+
+sf::st_write(schools_locations_students_by_level, "data/processed/poi/schools/schools_students.gpkg", delete_dsn = TRUE)
 
 # Aggregate at grid
 grid_schools <- grid |>
     st_transform(4326) |>
-    st_join(schools_locations_students_final |> st_transform(4326), join = st_intersects) |>
+    st_join(schools_locations_students_by_level |> st_transform(4326), join = st_intersects) |>
     group_by(gid) |>
     summarise(
         n_students = sum(N_ESTUDANTES, na.rm = TRUE),
