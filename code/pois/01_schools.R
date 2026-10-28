@@ -178,6 +178,41 @@ query_arcgis_school <- function(escola, municipio) {
     NULL
 }
 
+query_google_school <- function(escola, municipio, api_key = Sys.getenv("GOOGLE_MAPS_KEY")) {
+    if (api_key == "") {
+        return(NULL)
+    }
+
+    Sys.sleep(0.1) # Respect Google rate limits
+    q <- paste(escola, municipio, "Portugal", sep = ", ")
+    url <- paste0(
+        "https://maps.googleapis.com/maps/api/geocode/json?address=",
+        URLencode(q),
+        "&key=", api_key
+    )
+
+    res <- tryCatch(
+        jsonlite::fromJSON(url),
+        error = function(e) NULL
+    )
+
+    if (!is.null(res) && !is.null(res$status) && res$status == "OK" && length(res$results) > 0) {
+        types <- unlist(res$results$types[1])
+        # Avoid broad locality/administrative fallbacks when specific school isn't found
+        is_broad <- any(types %in% c("locality", "administrative_area_level_1", "administrative_area_level_2")) &&
+            !any(types %in% c("point_of_interest", "school", "establishment", "premise", "subpremise"))
+        
+        if (!is_broad) {
+            logr::log_info(sprintf("Google Maps match found for school %s in %s", escola, municipio))
+            return(tibble(
+                lat = as.numeric(res$results$geometry$location$lat[1]),
+                lon = as.numeric(res$results$geometry$location$lng[1])
+            ))
+        }
+    }
+    NULL
+}
+
 geocode_school <- function(escola, municipio) {
     # 1. Try OSM first
     res <- query_osm_school(escola, municipio)
@@ -187,7 +222,11 @@ geocode_school <- function(escola, municipio) {
     res_arcgis <- query_arcgis_school(escola, municipio)
     if (!is.null(res_arcgis)) return(res_arcgis)
 
-    logr::log_warning(sprintf("No match found (OSM & ArcGIS) for school %s in %s", escola, municipio))
+    # 3. Fallback to Google Maps
+    res_google <- query_google_school(escola, municipio)
+    if (!is.null(res_google)) return(res_google)
+
+    logr::log_warning(sprintf("No match found (OSM, ArcGIS & Google) for school %s in %s", escola, municipio))
     NULL
 }
 
@@ -197,7 +236,7 @@ logr::log_open()
 missing_geocoded <- missing_students_locations |>
     st_drop_geometry() |>
     mutate(
-        geocoded_coord = purrr::map2(ESCOLA, MUNICÍPIO, geocode_school, .progress = "Geocoding (OSM + ArcGIS)")
+        geocoded_coord = purrr::map2(ESCOLA, MUNICÍPIO, geocode_school, .progress = "Geocoding (OSM + ArcGIS + Google)")
     ) |>
     tidyr::unnest(geocoded_coord) |>
     filter(!is.na(lat), !is.na(lon)) |>
@@ -212,8 +251,8 @@ missing_geocoded <- missing_students_locations |>
         N_ESTUDANTES = N_ESTUDANTES
     )
 logr::log_close()
-nrow(missing_geocoded) # 153
-nrow(missing_geocoded) / nrow(missing_students_locations) # 73.56%
+nrow(missing_geocoded) # 197
+nrow(missing_geocoded) / nrow(missing_students_locations) # 94.71%
 
 # 4. Manually add schools not found in OSM
 manual_schools <- tribble(
@@ -245,9 +284,9 @@ schools_locations_students_final <- bind_rows(
     manual_geocoded
 ) 
 
-nrow(schools_locations_students_final) # 1785
-nrow(schools_locations_students_final) - nrow(schools_students_n) # 52
-nrow(schools_locations_students_final) / nrow(schools_students_n) # 97.16%
+nrow(schools_locations_students_final) # 1829
+nrow(schools_locations_students_final) - nrow(schools_students_n) # 8
+nrow(schools_locations_students_final) / nrow(schools_students_n) # 99.56%
 # View(schools_locations_students_final |> st_transform(4326))
 
 
@@ -276,7 +315,7 @@ schools_locations_students_by_level_original <- students_n |>
         ESCOLA = gsub('"', "", ESCOLA)
     )
 
-nrow(schools_locations_students_by_level) # 2724
+nrow(schools_locations_students_by_level_original) # 2724
 
 schools_locations_students_by_level = schools_locations_students_by_level_original|>
     select(CONCELHO = MUNICÍPIO, NOME = ESCOLA, NIVEL = NÍVEL_DE__ENSINO, N_ESTUDANTES) |>
@@ -305,8 +344,8 @@ schools_locations_students_by_level = schools_locations_students_by_level_origin
 testthat::expect_equal(schools_locations_students_by_level |> filter(primary_school & secondary_school & childcare) |> nrow(), 0)
 testthat::expect_equal(schools_locations_students_by_level |> filter(primary_school | secondary_school | childcare) |> nrow(), nrow(schools_locations_students_by_level))
 
-nrow(schools_locations_students_by_level) # 2672
-nrow(schools_locations_students_by_level) / nrow(schools_locations_students_by_level_original) # 98.09
+nrow(schools_locations_students_by_level) # 2716
+nrow(schools_locations_students_by_level) / nrow(schools_locations_students_by_level_original) # 99.70
 
 mapview::mapview(schools_locations_students_by_level, zcol = "N_ESTUDANTES") +
     mapview::mapview(schools_locations_students_by_level |> filter(secondary_school), zcol = "N_ESTUDANTES", hide = TRUE) +
