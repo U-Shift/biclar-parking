@@ -20,7 +20,7 @@ grid_dashboard <- grid |>
   # > Dasymetric map
   left_join(
     grid_dasymetric |> select(
-      gid,
+      gid = id,
       # Raw continuous (for parish/municipality aggregation)
       any_of(c(
         "population_raw",
@@ -69,6 +69,20 @@ grid_dashboard <- grid |>
   left_join(
     grid_ticketing_global |> rename_with(~ paste0("ticketing_", .), -gid)
   ) |>
+  # > POIS
+  # >> Schools and universities #37
+  left_join(
+    grid_pois_schools |>
+      select(-X) |>
+      rename_with(~ stringr::str_replace(., "n_students", "n_school_students")) |>
+      rename_with(~ paste0("pois_", .), -gid)
+  ) |>
+  left_join(
+    grid_pois_universities |>
+      select(-X) |>
+      rename_with(~ stringr::str_replace(., "n_students", "n_university_students")) |>
+      rename_with(~ paste0("pois_", .), -gid)
+  ) |>
   # Models
   # > Minimum ratios
   left_join(
@@ -116,6 +130,19 @@ col_to_agg <- c(
   ticketing_n_metro = "sum",
   ticketing_n_ltr = "sum",
   ticketing_n_boat = "sum",
+  # > POIS
+  # >> Schools and universities #37
+  pois_n_school_students="sum",
+  pois_n_schools="sum",
+  pois_n_school_students_childcare="sum",
+  pois_n_school_students_primary_school="sum",
+  pois_n_school_students_secondary_school="sum",
+  pois_n_schools_childcare="sum",
+  pois_n_schools_primary_school="sum",
+  pois_n_schools_secondary_school="sum",
+  pois_n_university_students="sum",
+  pois_n_faculties="sum",
+  pois_n_universities="sum",
   # Models
   # > Minimum ratios
   model_mr_ratio_residential_min = "min",
@@ -131,7 +158,7 @@ cols_mutate <- function(aggregated_layer) {
       dasymetric_population = ceiling(dasymetric_population_raw),
       dasymetric_buildings = ceiling(dasymetric_buildings_raw),
       dasymetric_buildings_pre1945 = pmin(dasymetric_buildings, ceiling(dasymetric_buildings_pre1945_raw)),
-      dasymetric_households = if_else(dasymetric_population > 0 & dasymetric_households_raw > 0, 
+      dasymetric_households = if_else(dasymetric_population > 0 & dasymetric_households_raw > 0,
                                       pmax(1, pmin(dasymetric_population, round(dasymetric_households_raw))), 0),
 
       # Indicators computed from raw continuous sums
@@ -306,6 +333,5 @@ files <- c(
 for (f in files) {
   scp_upload(session, paste(output_dir, f, sep = "/"), to = paste("/afs/.ist.utl.pt/groups/ushift/web/content/biclar", f, sep = "/"))
 }
-# scp_upload(session, paste(output_location, "champions.json", sep = "/"), to = paste("/afs/.ist.utl.pt/groups/ushift/web/content/biclar", "champions.json", sep = "/"))
 
 str(parishes_dashboard)
