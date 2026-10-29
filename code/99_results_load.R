@@ -25,6 +25,7 @@ grid_dasymetric_cos <- read.csv("data/base/daysimetric/grid_dasymetric_cos_only.
 # POIS
 # Schools #37
 grid_pois_schools <- read.csv("data/processed/poi/schools/grid_schools_students.csv")
+grid_pois_universities <- read.csv("data/processed/poi/universities/grid_universities_students.csv")
 # Others #34
 grid_pois <- read.csv("data/processed/poi/grid/poi_grid_counts.csv")
 grid_pois_area <- read.csv("data/processed/poi/buildings/poi_buildings_grid.csv")
