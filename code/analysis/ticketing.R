@@ -114,6 +114,8 @@ table(ticketing_raw$name)
 
 ticketing_missing_coordinates <- ticketing_raw |> filter(is.na(lat), is.na(lon))
 nrow(ticketing_missing_coordinates) # 23138
+nrow(ticketing_missing_coordinates) / nrow(ticketing_raw) # 1.08%
+nrow(ticketing_raw |> filter(!is.na(lat), !is.na(lon))) / nrow(ticketing_raw) # 98.91%
 table(ticketing_missing_coordinates$name)
 # Carris                       CP Metro Transportes do Sul                  
 # 18750                     3806                      582
