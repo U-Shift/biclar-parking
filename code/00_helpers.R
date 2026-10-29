@@ -46,17 +46,16 @@ analyse_col_dispersion <- function(
 }
 
 
-# Aggregate point features over polygon layers (e.g., grid, parishes, municipalities)
+# Aggregates point or grid attributes to a polygon layer using a common layer_id column.
 #
 # Parameters:
-# - points: sf object with point geometries. Points do not need any ID column;
-#          matching is purely geometric (points located within/intersecting layer polygons).
-# - layer: sf object with polygon geometries.
-# - layer_id: Name of unique ID column in `layer` (e.g. "gid", "pid", "mid").
-#             If NULL, searches for common ID names ("gid", "pid", "mid", "id", "ID")
-#             or generates a temporary row ID.
+# - points: data.frame or sf object containing the records/attributes to aggregate,
+#           with a column matching `layer_id`.
+# - layer: sf object with polygon geometries and the unique `layer_id`.
+# - layer_id: Name of unique ID column present in both `layer` and `points` (e.g. "gid", "pid", "mid").
+#             If NULL, searches for common ID names ("gid", "pid", "mid", "id", "ID").
 # - col_to_agg: Column(s) and aggregation functions. Can be:
-#     * NULL: Only computes point count `n`.
+#     * NULL: Only computes record count `n`.
 #     * Named list (different methods per col):
 #         list(capacity = c("sum", "mean"), requests = "sum")
 #     * Named vector:
@@ -65,13 +64,13 @@ analyse_col_dispersion <- function(
 #         c("capacity", "slots") or "capacity"
 # - agg_measures: Measures used when `col_to_agg` does not specify them explicitly.
 #                 Supported: "sum", "mean", "median", "min", "max", "sd". Default: c("sum").
-# - join: Spatial join predicate function (default: sf::st_intersects, or sf::st_within).
+# - join: Deprecated/unused parameter kept for backwards compatibility.
 # - keep_empty: If TRUE (default), keeps polygons with 0 points (fills `n` and `*_sum` with 0).
 #
 # Examples:
-#   aggregate_at_layer(parking_points, grid, layer_id = "gid")
-#   aggregate_at_layer(parking_points, grid, layer_id = "gid", col_to_agg = "capacity")
-#   aggregate_at_layer(parking_points, grid, layer_id = "gid", col_to_agg = list(capacity = c("sum", "mean"), requests = "sum"))
+#   aggregate_at_layer(grid_dashboard, parishes_dashboard, layer_id = "pid")
+#   aggregate_at_layer(grid_dashboard, parishes_dashboard, layer_id = "pid", col_to_agg = "capacity")
+#   aggregate_at_layer(grid_dashboard, parishes_dashboard, layer_id = "pid", col_to_agg = list(capacity = c("sum", "mean"), requests = "sum"))
 aggregate_at_layer <- function(
   points,
   layer,
@@ -81,32 +80,34 @@ aggregate_at_layer <- function(
   join = sf::st_intersects,
   keep_empty = TRUE
 ) {
-  stopifnot(inherits(points, "sf"), inherits(layer, "sf"))
+  stopifnot(inherits(layer, "sf"))
 
-  # Harmonise CRS
-  if (sf::st_crs(points) != sf::st_crs(layer)) {
-    points <- sf::st_transform(points, sf::st_crs(layer))
-  }
-
-  # Identify unique ID column in layer, or generate temporary ID
-  temp_id_created <- FALSE
-
+  # Identify unique ID column present in both layer and points
   if (!is.null(layer_id)) {
     layer_id_str <- if (is.character(layer_id)) layer_id else rlang::as_string(rlang::ensym(layer_id))
     if (!layer_id_str %in% names(layer)) {
       stop(sprintf("Column '%s' specified in `layer_id` not found in `layer`.", layer_id_str))
     }
+    if (!layer_id_str %in% names(points)) {
+      stop(sprintf("Column '%s' specified in `layer_id` not found in `points`.", layer_id_str))
+    }
     id_var <- layer_id_str
   } else {
     id_candidates <- c("gid", "pid", "mid", "id", "ID")
-    layer_id_col <- intersect(id_candidates, names(layer))
-    if (length(layer_id_col) > 0) {
-      id_var <- layer_id_col[1]
+    common_id <- intersect(id_candidates, intersect(names(layer), names(points)))
+    if (length(common_id) > 0) {
+      id_var <- common_id[1]
     } else {
-      id_var <- ".layer_row_id"
-      layer[[id_var]] <- seq_len(nrow(layer))
-      temp_id_created <- TRUE
+      stop("`layer_id` was not specified and no common ID column ('gid', 'pid', 'mid', 'id', 'ID') was found in both `layer` and `points`.")
     }
+  }
+
+  # Drop geometry from points for fast tabular aggregation
+  points_df <- if (inherits(points, "sf")) sf::st_drop_geometry(points) else as.data.frame(points)
+
+  # Align ID types if they differ (e.g. integer vs character)
+  if (typeof(points_df[[id_var]]) != typeof(layer[[id_var]])) {
+    mode(points_df[[id_var]]) <- mode(layer[[id_var]])
   }
 
   # Parse aggregation specification into a list: list(col_name = c("sum", ...))
@@ -128,30 +129,16 @@ aggregate_at_layer <- function(
     }
   }
 
-  # Avoid column collision if points already contains id_var
-  pts_to_agg <- points
-  needed_pt_cols <- unique(names(agg_specs))
-  needed_pt_cols <- intersect(needed_pt_cols, names(pts_to_agg))
-  pts_to_agg <- pts_to_agg[, needed_pt_cols, drop = FALSE]
-
-  # If polygon centroids or polygons are passed as `points`, convert to centroid for clean point-in-polygon matching if needed
-  if (!all(sf::st_geometry_type(pts_to_agg) %in% c("POINT", "MULTIPOINT"))) {
-    pts_to_agg <- suppressWarnings(sf::st_centroid(pts_to_agg))
-  }
-
-  layer_target <- layer[id_var]
-  names(layer_target)[names(layer_target) == id_var] <- ".agg_layer_id"
-
-  # Perform spatial join (features within/intersecting layer polygons)
-  joined <- sf::st_join(pts_to_agg, layer_target[".agg_layer_id"], join = join, left = FALSE) |>
-    sf::st_drop_geometry() |>
-    dplyr::filter(!is.na(.data[[".agg_layer_id"]]))
+  # Filter out points with NA for id_var
+  pts_to_agg <- points_df |>
+    dplyr::filter(!is.na(.data[[id_var]]))
 
   # Always include point counts 'n'
   summary_exprs <- list(n = dplyr::expr(dplyr::n()))
   sum_cols <- character()
 
   for (col_str in names(agg_specs)) {
+    if (!col_str %in% names(pts_to_agg)) next
     col_sym <- rlang::sym(col_str)
     measures <- agg_specs[[col_str]]
     single_measure <- length(measures) == 1
@@ -178,10 +165,9 @@ aggregate_at_layer <- function(
     }
   }
 
-  agg_df <- joined |>
-    dplyr::group_by(.data[[".agg_layer_id"]]) |>
+  agg_df <- pts_to_agg |>
+    dplyr::group_by(.data[[id_var]]) |>
     dplyr::summarise(!!!summary_exprs, .groups = "drop")
-  names(agg_df)[names(agg_df) == ".agg_layer_id"] <- id_var
 
   if (keep_empty) {
     res <- layer |>
@@ -198,9 +184,6 @@ aggregate_at_layer <- function(
       dplyr::inner_join(agg_df, by = id_var)
   }
 
-  if (temp_id_created) {
-    res[[id_var]] <- NULL
-  }
-
   return(res)
 }
+
