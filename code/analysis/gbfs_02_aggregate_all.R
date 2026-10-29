@@ -6,12 +6,15 @@ source("code/analysis/gbfs_00_params.R")
 BASE_FOLDER <- OUTPUT_FOLDER
 if (!dir.exists(OUTPUT_FOLDER)) dir.create(OUTPUT_FOLDER, recursive = TRUE)
 
+all_period_grids <- list()
+
 for (p in seq_len(nrow(PERIODS))) {
     period <- PERIODS[p, ]
-    period_file <- sprintf(
-        "grid_bikes_%s_%d-%d.csv",
+    period_tag <- sprintf(
+        "%s_%d-%d",
         period$day_type, period$hour_start, period$hour_end
     )
+    period_file <- sprintf("grid_bikes_%s.csv", period_tag)
 
     message(sprintf(
         "Aggregating all operators for period %s (%02d:00-%02d:00)...",
@@ -78,4 +81,23 @@ for (p in seq_len(nrow(PERIODS))) {
     out_path <- file.path(OUTPUT_FOLDER, period_file)
     write.csv(grid_all, out_path, row.names = FALSE)
     message(sprintf("Wrote %s (%d grid cells)", out_path, nrow(grid_all)))
+
+    # Store for combined table with renamed columns to avoid overlaps
+    grid_period_renamed <- grid_all |>
+        dplyr::rename_with(~ paste0(.x, "_", period_tag), -gid)
+    all_period_grids[[period_tag]] <- grid_period_renamed
 }
+
+# Combine all periods into a single CSV
+if (length(all_period_grids) > 0) {
+    message("Combining all periods into a single grid dataset...")
+    grid_combined <- Reduce(function(x, y) dplyr::full_join(x, y, by = "gid"), all_period_grids) |>
+        dplyr::arrange(gid)
+
+    combined_out_path <- file.path(OUTPUT_FOLDER, "grid_bikes_combined.csv")
+    write.csv(grid_combined, combined_out_path, row.names = FALSE)
+    message(sprintf("Wrote combined file %s (%d grid cells, %d columns)", combined_out_path, nrow(grid_combined), ncol(grid_combined)))
+} else {
+    warning("No period grids to combine.")
+}
+
