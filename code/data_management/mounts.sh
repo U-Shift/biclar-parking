@@ -1,1 +1,1 @@
-sudo mount --bind /data/TML/validacoes/ TML_validacoes/
+sudo mount --bind /data/TML/validacoes/ /data/biclar-parking/raw/TML_validacoes

@@ -91,7 +91,7 @@ for (z in ticketing_sources) {
 
     ticketing_raw <- bind_rows(ticketing_raw, ticketing_zip |>
         filter(ENTRY_EXIT %in% validation_types) |>
-        select(X_COORDINATE, Y_COORDINATE, Codigo_Entidade, DataHora) |>
+        select(X_COORDINATE, Y_COORDINATE, Codigo_Entidade, Nome_Paragem, DataHora) |>
         rename(lat = X_COORDINATE, lon = Y_COORDINATE, operator_id = Codigo_Entidade) |>
         mutate(
             # Convert DataHora (06/05/2026 00:07) to timestamp
@@ -105,18 +105,102 @@ for (z in ticketing_sources) {
     ))
 }
 
+# Attach operator names to raw validations
+ticketing_raw <- ticketing_raw |>
+    left_join(operators |> distinct(), by = c("operator_id" = "id"))
+
 nrow(ticketing_raw) # 2124810
-table((ticketing_raw |> left_join(operators, by = c("operator_id" = "id")))$name)
+table(ticketing_raw$name)
+
+ticketing_missing_coordinates <- ticketing_raw |> filter(is.na(lat), is.na(lon))
+nrow(ticketing_missing_coordinates) # 23138
+table(ticketing_missing_coordinates$name)
+# Carris                       CP Metro Transportes do Sul                  
+# 18750                     3806                      582
+
+# Recover missing coordinates from GTFS stops.txt -------------------------
+gtfs_dir <- "data/analysis/ticketing/gtfs"
+dir.create(gtfs_dir, recursive = TRUE, showWarnings = FALSE)
+
+gtfs_feeds <- list(
+    "Carris" = list(
+        url = "https://gateway.carris.pt/gateway/gtfs/api/v2.8/GTFS",
+        local = file.path(gtfs_dir, "Carris.zip")
+    ),
+    "CP" = list(
+        url = "https://publico.cp.pt/gtfs/gtfs.zip",
+        local = file.path(gtfs_dir, "CP.zip")
+    ),
+    "Metro Transportes do Sul" = list(
+        url = "https://mts.pt/imt/MTS-20240129.zip",
+        local = file.path(gtfs_dir, "MTS.zip")
+    )
+)
+
+read_gtfs_stops <- function(feed_info, op_name) {
+    zip_path <- feed_info$local
+    if (!file.exists(zip_path)) {
+        tryCatch({
+            download.file(feed_info$url, zip_path, mode = "wb", quiet = TRUE)
+        }, error = function(e) {
+            warning(sprintf("Could not download GTFS for %s from %s: %s", op_name, feed_info$url, conditionMessage(e)))
+        })
+    }
+    if (file.exists(zip_path)) {
+        con <- unz(zip_path, "stops.txt")
+        stops <- read.csv(con, stringsAsFactors = FALSE)
+        stops |>
+            select(stop_name, stop_lat, stop_lon) |>
+            group_by(stop_name) |>
+            slice(1) |>
+            ungroup() |>
+            mutate(operator_name = op_name)
+    } else {
+        data.frame(stop_name = character(), stop_lat = numeric(), stop_lon = numeric(), operator_name = character())
+    }
+}
+
+gtfs_stops_all <- bind_rows(lapply(names(gtfs_feeds), function(op_name) {
+    read_gtfs_stops(gtfs_feeds[[op_name]], op_name)
+}))
+
+# Match missing coordinates by operator name and Nome_Paragem (first match)
+ticketing_raw <- ticketing_raw |>
+    left_join(
+        gtfs_stops_all,
+        by = c("name" = "operator_name", "Nome_Paragem" = "stop_name")
+    ) |>
+    mutate(
+        lat = coalesce(lat, stop_lat),
+        lon = coalesce(lon, stop_lon)
+    ) |>
+    select(-stop_lat, -stop_lon)
+
+# Identify validations that remain without coordinates
+ticketing_missing_coordinates_gtfs_fix_still_missing <- ticketing_raw |>
+    filter(is.na(lat), is.na(lon))
+nrow(ticketing_missing_coordinates_gtfs_fix_still_missing) # 4959
+table(ticketing_missing_coordinates_gtfs_fix_still_missing$name)
+#     Carris                       CP Metro Transportes do Sul 
+# 571                     3806                      582 
+
+unmatched_stops_summary <- ticketing_missing_coordinates |>
+    group_by(name, Nome_Paragem) |>
+    summarise(validations = n(), .groups = "drop") |>
+    arrange(name, desc(validations))
+print(unmatched_stops_summary, n = 50)
+
 ticketing_sf <- ticketing_raw |>
     filter(!is.na(lat), !is.na(lon)) |>
     st_as_sf(coords = c("lon", "lat"), crs = 4326) |>
     mutate(id = row_number())
-nrow(ticketing_sf) # 2101672 (-23138 Total, -18750 Carris, -3806 CP)
-table((ticketing_sf |> left_join(operators, by = c("operator_id" = "id")))$name)
+nrow(ticketing_sf) # 2119851
+nrow(ticketing_sf) / nrow(ticketing_raw) # 99.766%
+table(ticketing_sf$name)
 table(ticketing_sf$operator_id)
 
 mapview(
-    ticketing_sf |> sample_n(100) |> left_join(operators, by = c("operator_id" = "id")),
+    ticketing_sf |> sample_n(100),
     zcol = "name",
     layer.name = "Entry validations"
 )
@@ -218,7 +302,8 @@ grid_ticketing_global <- ticketing_in_grid |>
         n_boat = sum(mode == "boat", na.rm = TRUE)
     )
 
-sum(grid_ticketing_global$n)
+sum(grid_ticketing_global$n) # 2117346
+testthat::expect_equal(sum(grid_ticketing_global$n), nrow(ticketing_sf) - nrow(ticketing_in_grid |> filter(is.na(gid))))
 mapview(grid |> left_join(grid_ticketing_global), zcol = "n")
 # mapview(grid |> left_join(grid_ticketing_global) |> filter(n_bus>0), zcol = "n_bus")
 # mapview(grid |> left_join(grid_ticketing_global) |> filter(n_train>0), zcol = "n_train")
