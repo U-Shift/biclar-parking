@@ -69,6 +69,12 @@ grid_dashboard <- grid |>
   left_join(
     grid_ticketing_global |> rename_with(~ paste0("ticketing_", .), -gid)
   ) |>
+  # > GBFS data
+  left_join(
+    grid_gbfs_bikes |>
+      select(gid, starts_with("avg_vehicles_per_update_")) |>
+      rename_with(~ paste0("gbfs_", .), -gid)
+  ) |>
   # > POIS
   # >> Schools and universities #37
   left_join(
@@ -130,6 +136,11 @@ col_to_agg <- c(
   ticketing_n_metro = "sum",
   ticketing_n_ltr = "sum",
   ticketing_n_boat = "sum",
+  # > GBFS data
+  setNames(
+    rep("sum", sum(grepl("^gbfs_avg", names(grid_dashboard)))),
+    grep("^gbfs_avg", names(grid_dashboard), value = TRUE)
+  ),
   # > POIS
   # >> Schools and universities #37
   pois_n_school_students="sum",
@@ -327,8 +338,8 @@ st_write(
 files <- c(
   "municipalities_dashboard.geojson", "parishes_dashboard.geojson", "grid_dashboard.geojson",
   "municipalities_dashboard.csv", "parishes_dashboard.csv", "grid_dashboard.csv",
-  "municipios_limits.geojson",
-  "layer_cycleways.geojson", "layer_parking.geojson"
+  "municipios_limits.geojson"
+  # "layer_cycleways.geojson", "layer_parking.geojson"
 )
 for (f in files) {
   scp_upload(session, paste(output_dir, f, sep = "/"), to = paste("/afs/.ist.utl.pt/groups/ushift/web/content/biclar", f, sep = "/"))

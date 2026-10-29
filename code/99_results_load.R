@@ -10,7 +10,7 @@ parking <- sf::st_read("data/base/existing_parking/aml_osm_parking.gpkg")
 parking_grid <- sf::st_read("data/base/existing_parking/osm_parking_grid.gpkg")
 
 # GBFS data #29
-# grid_gbfs_bikes <- read.csv("data/analysis/gbfs/grid_bikes_all_0-24.csv")
+grid_gbfs_bikes <- read.csv("data/analysis/gbfs/grid_bikes_combined.csv")
 
 # Bike thefts #14
 grid_thefts <- read.csv("data/processed/thefts/grid_thefts.csv")
