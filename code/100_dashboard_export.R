@@ -138,8 +138,16 @@ cols_mutate <- function(aggregated_layer) {
       dasymetric_population_youth_percentage = if_else(dasymetric_population_raw > 0, round(dasymetric_population_youth_raw / dasymetric_population_raw * 100, 2), 0),
       dasymetric_population_elderly_percentage = if_else(dasymetric_population_raw > 0, round(dasymetric_population_elderly_raw / dasymetric_population_raw * 100, 2), 0),
       dasymetric_population_women_percentage = if_else(dasymetric_population_raw > 0, round(dasymetric_population_women_raw / dasymetric_population_raw * 100, 2), 0),
-      dasymetric_dependency_ratio_youth = if_else(dasymetric_population_adults_raw > 0, round(dasymetric_population_youth_raw / dasymetric_population_adults_raw * 100, 2), 0),
-      dasymetric_dependency_ratio_elderly = if_else(dasymetric_population_adults_raw > 0, round(dasymetric_population_elderly_raw / dasymetric_population_adults_raw * 100, 2), 0),
+      dasymetric_dependency_ratio_youth = case_when(
+        dasymetric_population_adults_raw >= 0.5 ~ round(dasymetric_population_youth_raw / dasymetric_population_adults_raw * 100, 2),
+        dasymetric_population_youth_raw == 0    ~ 0,
+        TRUE                                    ~ NA_real_
+      ),
+      dasymetric_dependency_ratio_elderly = case_when(
+        dasymetric_population_adults_raw >= 0.5 ~ round(dasymetric_population_elderly_raw / dasymetric_population_adults_raw * 100, 2),
+        dasymetric_population_elderly_raw == 0  ~ 0,
+        TRUE                                    ~ NA_real_
+      ),
       dasymetric_pp_hh_avg = if_else(dasymetric_households >= 3, round(dasymetric_population / dasymetric_households, 2), NA_real_),
       dasymetric_buildings_pre1945_percentage = if_else(dasymetric_buildings_raw > 0, round(dasymetric_buildings_pre1945_raw / dasymetric_buildings_raw * 100, 2), 0),
 

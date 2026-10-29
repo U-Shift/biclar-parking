@@ -641,8 +641,16 @@ grid_final <- grid |>
     # Indicator rates and proportions calculated from RAW fractions (prevents integer truncation artifacts)
     youth_ratio = if_else(population_raw > 0, round(youth_raw / population_raw * 100, 2), 0),
     elderly_ratio = if_else(population_raw > 0, round(elderly_raw / population_raw * 100, 2), 0),
-    youth_dependency = if_else(adults_raw > 0, round(youth_raw / adults_raw * 100, 2), 0),
-    elderly_dependency = if_else(adults_raw > 0, round(elderly_raw / adults_raw * 100, 2), 0),
+    youth_dependency = case_when(
+      adults_raw >= 0.5 ~ round(youth_raw / adults_raw * 100, 2),
+      youth_raw == 0    ~ 0,
+      TRUE              ~ NA_real_
+    ),
+    elderly_dependency = case_when(
+      adults_raw >= 0.5 ~ round(elderly_raw / adults_raw * 100, 2),
+      elderly_raw == 0  ~ 0,
+      TRUE              ~ NA_real_
+    ),
     women_percentage = if_else(population_raw > 0, round(women_raw / population_raw * 100, 2), 0),
     buildings_pre1945_percentage = if_else(buildings_raw > 0, round(buildings_pre45_raw / buildings_raw * 100, 2), 0),
     pp_hh_avg = if_else(households >= 3, round(population / households, 2), NA_real_),
@@ -679,9 +687,7 @@ grid_final <- grid |>
     rem_age, ry, ra, re, add_y, rem_after_y, add_a, rem_after_a, add_e
   )) |>
   mutate(
-    youth_dependency   = if_else(is.nan(youth_dependency) | is.infinite(youth_dependency), 0, youth_dependency),
-    elderly_dependency = if_else(is.nan(elderly_dependency) | is.infinite(elderly_dependency), 100, elderly_dependency),
-    pp_hh_avg          = if_else(pp_hh_avg > 50, NA_real_, pp_hh_avg)
+    pp_hh_avg = if_else(pp_hh_avg > 50, NA_real_, pp_hh_avg)
   ) |>
   st_transform(4326)
 
