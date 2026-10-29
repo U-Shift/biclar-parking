@@ -1,28 +1,19 @@
 # Adapted from https://github.com/U-Shift/MQAT/blob/main/code/dataprep/schools_lx.R
 
 library(sf)
+library(dplyr)
 library(tidyverse)
-library(osmdata)
-library(logr) # install.packages("logr")
 
 source("code/00_data_load.R")
+source("code/pois/00_geocode_helpers.R")
 
 # If missing rJava dependency when running read_xlsx, run the commands below:
 # $ sudo apt update & sudo apt install default-jdk
 # $ sudo R CMD javareconf
 # $ find /usr/lib/jvm -name "libjvm.so" # Replace output in the next command
 # > dyn.load('/usr/lib/jvm/java-21-openjdk-amd64/lib/server/libjvm.so', local = FALSE)
-#
-# To use Google Maps Geocoding as a fallback (3rd resource):
-# 1. Go to Google Cloud Console (https://console.cloud.google.com/) and create/select a project.
-# 2. Enable billing (Google provides a recurring $200 monthly credit, covering ~40,000 requests/month).
-# 3. Enable the "Geocoding API" under APIs & Services > Library.
-# 4. Create an API key under APIs & Services > Credentials (optionally restrict it to "Geocoding API").
-# 5. Add the key to your environment: run `usethis::edit_r_environ()` or create ~/.Renviron or .Renviron:
-#    GOOGLE_MAPS_KEY="AIzaSy..."
-# 6. Restart your R session so Sys.getenv("GOOGLE_MAPS_KEY") picks it up.
 
-# 1. Get number of students for each school
+# 1. Get data for schools ----------------------------------------------
 students_n_file <- tempfile(fileext = ".xlsx")
 download.file(url = "https://www.dgeec.medu.pt/api/ficheiros/6a3e81a11a35c6289d788ae6", destfile = students_n_file, mode = "wb")
 students_n <- readxl::read_xlsx(students_n_file)
@@ -38,7 +29,7 @@ table(students_n$NÍVEL_DE__ENSINO)
 length(unique(students_n$CÓDIGO_DGEEC_ESCOLA)) # 7648
 unique(students_n$MUNICÍPIO)
 
-# Group by total students
+## 1.1 Aggregate number of students by school -----------
 # Each "agrupamento" (CÓDIGO_DGEEC_AGRUPAMENTO) has multiple schools
 # Each school (ENTIDADE, CÓDIGO_DGEEC_ESCOLA) has multiple rows, one per NÍVEL_DE__ENSINO, ANO_DE_ESCOLARIDADE, SEXO (Homens, Mulheres)
 # Students number is given by NÚMERO_DE_ALUNOS_MATRICULADOS
@@ -75,7 +66,7 @@ unique(schools_students_n$MUNICÍPIO)
 length(unique(schools_students_n$MUNICÍPIO))
 testthat::expect_equal(sort(unique(schools_students_n$MUNICÍPIO)), sort(municipalities_meta$name))
 
-# 2. Get school locations
+## 1.2 Match school locations from RedeEscolar ---------------------------
 # No matching ID, match using NOME, CONCELHO (= ESCOLA, MUNICÍPIO)
 schools_locations <- read.csv("data/raw/schools_universities/RedeEscolar.csv") |>
     filter(
@@ -111,12 +102,11 @@ table(missing_students_locations$NATUREZA)
 table(missing_students_locations$TIPOLOGIA)
 table(missing_students_locations$NIVEIS)
 
-# 3. Geocode missing schools using OSM (Nominatim) with ArcGIS and Google Maps fallback
-source("code/pois/00_geocode_helpers.R")
+## 1.3 Geocode missing schools -------------------------------------------
 
 setubal_munis <- c("Alcochete", "Almada", "Barreiro", "Moita", "Montijo", "Palmela", "Seixal", "Sesimbra", "Setúbal")
 
-logr::log_open()
+logr::log_open("poi_schools.log")
 missing_geocoded <- missing_students_locations |>
     st_drop_geometry() |>
     mutate(
@@ -138,7 +128,7 @@ logr::log_close()
 nrow(missing_geocoded) # 197
 nrow(missing_geocoded) / nrow(missing_students_locations) # 94.71%
 
-# 4. Manually add schools not found in OSM
+## 1.4 Manually add schools not found by automated geocoding --------
 manual_schools <- tribble(
     ~ESCOLA, ~MUNICÍPIO, ~lat, ~lon,
     "Centro de Apoio à Família Crescer para Integrar", "Cascais", 38.705033, -9.353837,
@@ -184,7 +174,7 @@ nrow(schools_locations_students_final) / nrow(schools_students_n) # 100%
 # View(schools_locations_students_final |> st_transform(4326))
 
 
-# 5. Associate locations to schools disaggregated by level 
+## 1.5 Associate locations to schools disaggregated by level ------------
 schools_locations_students_by_level_original <- students_n |>
     filter(
         DISTRITO %in% c("Lisboa", "Setúbal"),
@@ -255,7 +245,7 @@ mapview::mapview(schools_locations_students_by_level, zcol = "N_ESTUDANTES") +
 
 sf::st_write(schools_locations_students_by_level, "data/processed/poi/schools/schools_students.gpkg", delete_dsn = TRUE)
 
-# Aggregate at grid
+# 2. Aggregate at grid --------------------------------------------------
 grid_schools <- grid |>
     st_transform(4326) |>
     st_join(schools_locations_students_by_level |> st_transform(4326), join = st_intersects) |>
