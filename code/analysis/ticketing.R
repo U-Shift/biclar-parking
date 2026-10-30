@@ -6,55 +6,7 @@ source("code/00_data_load.R")
 source("code/00_helpers.R")
 
 # Parameters --------------------------------------------------
-INTERFACE_BUFFER_M <- 150
 OUTPUT_FOLDER <- "data/analysis/ticketing"
-
-# Load TML interfaces --------------------------------------------------
-interfaces <- st_read("https://geoportal.tmlmobilidade.pt/ogc-api/collections/interfaces_interfaces_hierarquia_aml/items?f=json&limit=1000&offset=0") |>
-    mutate(
-        Interface = trimws(tolower(gsub("[()]", "", Interface))),
-        # Split interface by "+", creating list of rows
-        interface_list = strsplit(Interface, "\\+"),
-        # For each element, trim leading/trailing whitespace
-        interface_list = lapply(interface_list, function(x) trimws(x))
-    ) |>
-    mutate(cod_interf = row_number())
-
-View(interfaces |> st_drop_geometry())
-nrow(interfaces) # 267
-
-mapview(interfaces |> select(cod_interf, designacao, hierarq, tipo, municipio), zcol = "tipo")
-
-# > Extend data with flags on modes covered
-table(unlist(interfaces$interface_list))
-
-# (interfaces[1, ])$interface_list
-
-interfaces <- interfaces |> mutate(
-    # Modes / Facilities
-    airplane = grepl("avião", Interface),
-    boat = grepl("barco", Interface),
-    bike_sharing = sapply(interface_list, function(x) any(grepl("bike-sharing", x))),
-    train = grepl("comboio", Interface),
-    tram = grepl("elétrico", Interface),
-    car_parking = sapply(interface_list, function(x) any(x == "estacionamento" | x == "p&r")),
-    bike_parking = sapply(interface_list, function(x) any(grepl("estacionamento.*bicicletas", x))),
-    dropoff_pickup = sapply(interface_list, function(x) any(grepl("tomada e largada|tom e larg", x))),
-    metro = grepl("metro|metros", Interface),
-    park_and_ride = grepl("p&r", Interface),
-    bus_stop = grepl("paragem.*tcr", Interface),
-    bus_terminal = grepl("terminal.*tcr", Interface),
-    bus_tcr = grepl("tcr", Interface),
-    taxi = grepl("táxis", Interface)
-)
-View(interfaces |> st_drop_geometry())
-
-# mapview(interfaces |> select(-interface_list), zcol="bus_tcr")
-# mapview(interfaces |> select(-interface_list), zcol="metro")
-# mapview(interfaces |> select(-interface_list), zcol="bike_parking")
-# mapview(interfaces |> select(-interface_list), zcol="dropoff_pickup")
-# mapview(interfaces |> select(-interface_list), zcol="tram")
-# mapview(interfaces |> select(-interface_list), zcol="boat")
 
 # Load ticketing data --------------------------------------------------
 base_folder <- "data/raw/TML_validacoes/06-05-2026 Todos Operadores"
@@ -226,56 +178,6 @@ operators
 ticketing_sf <- ticketing_sf |> left_join(operators |> select(id, mode), by = c("operator_id" = "id"))
 table(ticketing_sf$mode)
 
-# Overlap ticketing and interfaces --------------------------------------------------
-
-interfaces_buffer <- interfaces |>
-    select(-interface_list) |>
-    st_transform(3763)
-
-# Generate Voronoi cells to split overlaps fairly between nearest points
-points_union <- st_union(interfaces_buffer)
-voronoi_geom <- st_voronoi(points_union)
-voronoi_sf <- st_collection_extract(voronoi_geom, "POLYGON") |> st_as_sf()
-
-# Match each interface point to its corresponding Voronoi cell
-cell_indices <- st_within(interfaces_buffer, voronoi_sf) |> as.integer()
-voronoi_polys <- st_geometry(voronoi_sf)[cell_indices]
-
-# Buffer the interfaces by INTERFACE_BUFFER_M meters
-buffers <- st_buffer(interfaces_buffer, INTERFACE_BUFFER_M)
-
-# Intersect each buffer with its corresponding Voronoi cell (element-wise)
-clean_geoms <- Map(st_intersection, st_geometry(buffers), voronoi_polys)
-
-# Assign the clipped geometries back and transform to 4326
-st_geometry(interfaces_buffer) <- st_sfc(clean_geoms, crs = 3763)
-interfaces_buffer <- interfaces_buffer |> st_transform(4326)
-
-mapview(interfaces_buffer)
-
-ticketing_sf_joined <- st_join(
-    ticketing_sf |> select(id),
-    interfaces_buffer |> select(cod_interf),
-    join = st_within
-)
-
-interface_ticketing <- ticketing_sf_joined |>
-    st_drop_geometry() |>
-    filter(!is.na(cod_interf)) |>
-    group_by(cod_interf) |>
-    summarise(n = n())
-
-interface_ticketing_sf <- interfaces |>
-    select(cod_interf) |>
-    left_join(interface_ticketing) |>
-    mutate(n = ifelse(!is.na(n), n, 0))
-
-mapview(
-    interface_ticketing_sf,
-    zcol = "n",
-    layer.name = sprintf("Number of validations within %dm", INTERFACE_BUFFER_M)
-)
-
 # Overlap ticketing and grid --------------------------------------------------
 
 # > All tickets
@@ -316,29 +218,5 @@ mapview(grid |> left_join(grid_ticketing_global), zcol = "n")
 write.csv(
     grid_ticketing_global,
     sprintf("%s/grid_ticketing_global.csv", OUTPUT_FOLDER),
-    row.names = FALSE
-)
-
-# > Tickets at interfaces
-
-interfaces_in_grid <- st_join(
-    interfaces |> select(cod_interf),
-    grid |> select(gid),
-    join = st_within
-)
-
-grid_ticketing_interfaces <- interfaces_in_grid |>
-    st_drop_geometry() |>
-    filter(!is.na(cod_interf)) |>
-    left_join(interface_ticketing_sf |> st_drop_geometry()) |>
-    group_by(gid) |>
-    summarise(n = sum(n))
-
-sum(grid_ticketing_interfaces$n)
-mapview(grid |> left_join(grid_ticketing_interfaces), zcol = "n")
-
-write.csv(
-    grid_ticketing_interfaces,
-    sprintf("%s/grid_ticketing_interfaces.csv", OUTPUT_FOLDER),
     row.names = FALSE
 )
