@@ -8,7 +8,7 @@ if (!dir.exists(OUTPUT_FOLDER)) dir.create(OUTPUT_FOLDER, recursive = TRUE)
 
 all_period_grids <- list()
 
-for (p in seq_len(nrow(PERIODS))) {
+for (p in seq_len(nrow(PERIODS))) { # p = 1 
     period <- PERIODS[p, ]
     period_tag <- sprintf(
         "%s_%d-%d",
@@ -43,40 +43,49 @@ for (p in seq_len(nrow(PERIODS))) {
     }
 
     combined <- dplyr::bind_rows(operator_dfs)
+    # View(combined)
 
     # Merge 'bike' and 'bicycle' into 'bicycle'
     if ("n_bike" %in% names(combined)) {
         if (!"n_bicycle" %in% names(combined)) combined$n_bicycle <- 0
         combined$n_bicycle <- rowSums(cbind(combined$n_bicycle, combined$n_bike), na.rm = TRUE)
+
+        if ("avg_bike_per_update" %in% names(combined)) {
+            if (!"avg_bicycle_per_update" %in% names(combined)) combined$avg_bicycle_per_update <- 0
+            combined$avg_bicycle_per_update <- rowSums(cbind(combined$avg_bicycle_per_update, combined$avg_bike_per_update), na.rm = TRUE)
+        }
+
+        if ("n_updates_bike" %in% names(combined)) {
+            if (!"n_updates_bicycle" %in% names(combined)) combined$n_updates_bicycle <- 0
+            combined$n_updates_bicycle <- pmax(combined$n_updates_bicycle, combined$n_updates_bike, na.rm = TRUE)
+        }
+
         combined <- combined |> select(-matches("^(n|avg)_(updates_)?bike(_per_update)?$"))
     }
 
-    # Identify vehicle count columns (e.g. n_vehicles, n_scooter, n_bicycle)
+    # Identify vehicle count and average columns
     count_cols <- grep("^n_", names(combined), value = TRUE)
     count_cols <- count_cols[!grepl("(_per_update|_updates|^n_updates$|^n_days$|^n_vehicles$)", count_cols)]
     count_cols <- c("n_vehicles", count_cols)
+
+    avg_cols <- grep("^avg_.*_per_update$", names(combined), value = TRUE)
+    avg_cols <- c("avg_vehicles_per_update", setdiff(avg_cols, "avg_vehicles_per_update"))
+
+    updates_type_cols <- grep("^n_updates_", names(combined), value = TRUE)
 
     # Aggregate across all operators per grid cell
     grid_all <- combined |>
         group_by(gid) |>
         summarise(
             across(all_of(count_cols), ~ sum(.x, na.rm = TRUE)),
+            across(all_of(avg_cols), ~ round(sum(.x, na.rm = TRUE), 2)),
+            across(all_of(updates_type_cols), ~ max( ifelse(is.na(.x), 0, .x) )),
             n_updates = max(n_updates, na.rm = TRUE),
             n_days = max(n_days, na.rm = TRUE),
             n_operators = n_distinct(operator),
             operators = paste(sort(unique(operator)), collapse = ", "),
             .groups = "drop"
-        ) |>
-        mutate(
-            avg_vehicles_per_update = round(n_vehicles / n_updates, 2)
         )
-
-    # Compute per-vehicle-type updates and per_update rates
-    for (col in count_cols[count_cols != "n_vehicles"]) {
-        type_name <- sub("^n_", "", col)
-        grid_all[[paste0("n_updates_", type_name)]] <- ifelse(grid_all[[col]] > 0, grid_all$n_updates, 0)
-        grid_all[[paste0("avg_", type_name, "_per_update")]] <- round(grid_all[[col]] / grid_all$n_updates, 2)
-    }
 
     out_path <- file.path(OUTPUT_FOLDER, period_file)
     write.csv(grid_all, out_path, row.names = FALSE)
