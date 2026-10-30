@@ -85,7 +85,20 @@ poi_mr <- function(poi_grid, ratios){
       names_from = category,
       values_from = c(poi_min, poi_max, area, parking_min, parking_max),
       names_glue = "{.value}_{category}"
+    ) |>
+    rename_with(
+      ~ sub("^parking_min_", "parking_min_poi_", .x),
+      starts_with("parking_min")
+    ) |>
+    rename_with(
+      ~ sub("^parking_max_", "parking_max_poi_", .x),
+      starts_with("parking_max")
+    ) |>
+    rename_with(
+      ~ sub("^area_", "area_poi_", .x),
+      starts_with("area")
     )
+
   parking_total <- parking_long |>  # create an object with only the totals
     group_by(gid) |>
     summarise(
@@ -138,7 +151,19 @@ pt_mr <- function(pt_grid, ratios){
       values_from = c(pt_min, pt_max, n_mode, parking_min, parking_max),
       names_glue = "{.value}_{category}"
     ) |>
-    select(-h3_address)
+    select(-h3_address) |>
+    rename_with(
+      ~ sub("^parking_min_", "parking_min_pt_", .x),
+      starts_with("parking_min")
+    ) |>
+    rename_with(
+      ~ sub("^parking_max_", "parking_max_pt_", .x),
+      starts_with("parking_max")
+    ) |>
+    rename_with(
+      ~ sub("^n_mode_", "n_mode_pt_", .x),
+      starts_with("n_mode")
+    )
 
   parking_total <- parking_long |>  # create an object with only the totals
     group_by(gid) |>
@@ -190,18 +215,18 @@ schools_mr <- function(schools_grid, university_grid, ratios){
   all_schools_grid <- all_schools_grid |>
     cross_join(ratios_wide) |>
     mutate(
-      parking_min_childcare = n_students_childcare*schools_min_childcare,
-      parking_min_primary = n_students_primary_school*schools_min_primary,
-      parking_min_secondary = n_students_secondary_school*schools_min_secondary,
-      parking_min_university = n_students_university*schools_min_university,
+      parking_min_schools_childcare = n_students_childcare*schools_min_childcare,
+      parking_min_schools_primary = n_students_primary_school*schools_min_primary,
+      parking_min_schools_secondary = n_students_secondary_school*schools_min_secondary,
+      parking_min_schools_university = n_students_university*schools_min_university,
 
-      parking_max_childcare = n_students_childcare*schools_max_childcare,
-      parking_max_primary = n_students_primary_school*schools_max_primary,
-      parking_max_secondary = n_students_secondary_school*schools_max_secondary,
-      parking_max_university = n_students_university*schools_max_university,
+      parking_max_schools_childcare = n_students_childcare*schools_max_childcare,
+      parking_max_schools_primary = n_students_primary_school*schools_max_primary,
+      parking_max_schools_secondary = n_students_secondary_school*schools_max_secondary,
+      parking_max_schools_university = n_students_university*schools_max_university,
 
-      parking_min_schools_total = parking_min_childcare + parking_min_primary + parking_min_secondary + parking_min_university,
-      parking_max_schools_total = parking_max_childcare + parking_max_primary + parking_max_secondary + parking_max_university
+      parking_min_schools_total = parking_min_schools_childcare + parking_min_schools_primary + parking_min_schools_secondary + parking_min_schools_university,
+      parking_max_schools_total = parking_max_schools_childcare + parking_max_schools_primary + parking_max_schools_secondary + parking_max_schools_university
     )
 
   parking_total <- grid |>
