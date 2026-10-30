@@ -3,13 +3,6 @@ source("code/00_helpers.R")
 source("code/99_results_load.R")
 
 
-# SSH authentication ------------------------------------------------------
-# When updated, data should be uploaded to the IST serve through SSH, to serve the web dashboard
-# install.packages("ssh")
-library(ssh)
-session <- ssh_connect("ist1108284@sigma.ist.utl.pt")
-print(session)
-
 # Aggregate results ------------------------------------------------------
 
 ## Grid ------------------------------------------------------
@@ -92,13 +85,13 @@ grid_dashboard <- grid |>
   # Models
   # > Minimum ratios
   left_join(
-    model_mr |>
+    residential_mr |>
       select(
         gid,
-        model_mr_ratio_residential_min = residential_min,
-        model_mr_ratio_residential_max = residential_max,
-        model_mr_parking_residential_min = residential_parking_min,
-        model_mr_parking_residential_max = residential_parking_max
+        # model_mr_ratio_residential_min = residential_min,
+        # model_mr_ratio_residential_max = residential_max,
+        model_mr_parking_residential_min = parking_min_residential,
+        model_mr_parking_residential_max = parking_max_residential
       ),
     by = "gid"
   )
@@ -143,21 +136,21 @@ col_to_agg <- c(
   ),
   # > POIS
   # >> Schools and universities #37
-  pois_n_school_students="sum",
-  pois_n_schools="sum",
-  pois_n_school_students_childcare="sum",
-  pois_n_school_students_primary_school="sum",
-  pois_n_school_students_secondary_school="sum",
-  pois_n_schools_childcare="sum",
-  pois_n_schools_primary_school="sum",
-  pois_n_schools_secondary_school="sum",
-  pois_n_university_students="sum",
-  pois_n_faculties="sum",
-  pois_n_universities="sum",
+  pois_n_school_students = "sum",
+  pois_n_schools = "sum",
+  pois_n_school_students_childcare = "sum",
+  pois_n_school_students_primary_school = "sum",
+  pois_n_school_students_secondary_school = "sum",
+  pois_n_schools_childcare = "sum",
+  pois_n_schools_primary_school = "sum",
+  pois_n_schools_secondary_school = "sum",
+  pois_n_university_students = "sum",
+  pois_n_faculties = "sum",
+  pois_n_universities = "sum",
   # Models
   # > Minimum ratios
-  model_mr_ratio_residential_min = "min",
-  model_mr_ratio_residential_max = "max",
+  # model_mr_ratio_residential_min = "min",
+  # model_mr_ratio_residential_max = "max",
   model_mr_parking_residential_min = "sum",
   model_mr_parking_residential_max = "sum"
 )
@@ -170,7 +163,8 @@ cols_mutate <- function(aggregated_layer) {
       dasymetric_buildings = ceiling(dasymetric_buildings_raw),
       dasymetric_buildings_pre1945 = pmin(dasymetric_buildings, ceiling(dasymetric_buildings_pre1945_raw)),
       dasymetric_households = if_else(dasymetric_population > 0 & dasymetric_households_raw > 0,
-                                      pmax(1, pmin(dasymetric_population, round(dasymetric_households_raw))), 0),
+        pmax(1, pmin(dasymetric_population, round(dasymetric_households_raw))), 0
+      ),
 
       # Indicators computed from raw continuous sums
       dasymetric_population_youth_percentage = if_else(dasymetric_population_raw > 0, round(dasymetric_population_youth_raw / dasymetric_population_raw * 100, 2), 0),
@@ -178,13 +172,13 @@ cols_mutate <- function(aggregated_layer) {
       dasymetric_population_women_percentage = if_else(dasymetric_population_raw > 0, round(dasymetric_population_women_raw / dasymetric_population_raw * 100, 2), 0),
       dasymetric_dependency_ratio_youth = case_when(
         dasymetric_population_adults_raw >= 0.5 ~ round(dasymetric_population_youth_raw / dasymetric_population_adults_raw * 100, 2),
-        dasymetric_population_youth_raw == 0    ~ 0,
-        TRUE                                    ~ NA_real_
+        dasymetric_population_youth_raw == 0 ~ 0,
+        TRUE ~ NA_real_
       ),
       dasymetric_dependency_ratio_elderly = case_when(
         dasymetric_population_adults_raw >= 0.5 ~ round(dasymetric_population_elderly_raw / dasymetric_population_adults_raw * 100, 2),
-        dasymetric_population_elderly_raw == 0  ~ 0,
-        TRUE                                    ~ NA_real_
+        dasymetric_population_elderly_raw == 0 ~ 0,
+        TRUE ~ NA_real_
       ),
       dasymetric_pp_hh_avg = if_else(dasymetric_households >= 3, round(dasymetric_population / dasymetric_households, 2), NA_real_),
       dasymetric_buildings_pre1945_percentage = if_else(dasymetric_buildings_raw > 0, round(dasymetric_buildings_pre1945_raw / dasymetric_buildings_raw * 100, 2), 0),
@@ -195,22 +189,18 @@ cols_mutate <- function(aggregated_layer) {
       py = if_else(has_ages, dasymetric_population_youth_raw / raw_age_sum, 0),
       pa = if_else(has_ages, dasymetric_population_adults_raw / raw_age_sum, 1),
       pe = if_else(has_ages, dasymetric_population_elderly_raw / raw_age_sum, 0),
-
       fy = floor(dasymetric_population * py),
       fa = floor(dasymetric_population * pa),
       fe = floor(dasymetric_population * pe),
-
       rem_age = dasymetric_population - (fy + fa + fe),
       ry = (dasymetric_population * py) - fy,
       ra = (dasymetric_population * pa) - fa,
       re = (dasymetric_population * pe) - fe,
-
       add_y = (rem_age >= 1 & ry >= ra & ry >= re) | (rem_age == 2 & (ry >= pmin(ra, re))),
       rem_after_y = rem_age - as.integer(add_y),
       add_a = (rem_after_y >= 1 & ra >= re) | (rem_after_y == 2),
       rem_after_a = rem_after_y - as.integer(add_a),
       add_e = rem_after_a >= 1,
-
       dasymetric_population_youth = if_else(dasymetric_population > 0, fy + as.integer(add_y), 0),
       dasymetric_population_adults = if_else(dasymetric_population > 0, fa + as.integer(add_a), 0),
       dasymetric_population_elderly = if_else(dasymetric_population > 0, fe + as.integer(add_e), 0),
@@ -290,7 +280,6 @@ municipalities_dashboard <- municipalities_dashboard |> mutate(
 )
 
 
-
 # Store output ------------------------------------------------------
 output_dir <- "data/dashboard_data"
 
@@ -334,15 +323,5 @@ st_write(
   delete_dsn = TRUE
 )
 
-# Upload to IST server for dashboard  ----------------------------------------------------
-files <- c(
-  "municipalities_dashboard.geojson", "parishes_dashboard.geojson", "grid_dashboard.geojson",
-  "municipalities_dashboard.csv", "parishes_dashboard.csv", "grid_dashboard.csv",
-  "municipios_limits.geojson"
-  # "layer_cycleways.geojson", "layer_parking.geojson"
-)
-for (f in files) {
-  scp_upload(session, paste(output_dir, f, sep = "/"), to = paste("/afs/.ist.utl.pt/groups/ushift/web/content/biclar", f, sep = "/"))
-}
-
+str(grid_dashboard)
 str(parishes_dashboard)
