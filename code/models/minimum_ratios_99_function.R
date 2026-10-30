@@ -19,7 +19,6 @@ library(mapview)
 
 source("code/00_data_load.R")
 source("code/99_results_load.R")
-grid_csv <- read.csv("useful_data/grid.csv")
 
 # 1. Residential minimum ratios function -------------------
 # Function to calculate minimum number of parking spots for residential areas in each grid cell
@@ -54,7 +53,7 @@ residential_mr <- function(grid_gpkg, grid_csv, buildings_grid, ratios){
 
 # grid_dasymetric <- read.csv("data/base/daysimetric/grid_dasymetric_combined.csv")
 residential_ratios <- read.csv("data/models/minimum_ratios/residential.csv")
-mrm_residential <- residential_mr(grid, grid_csv, grid_dasymetric, residential_ratios)
+mrm_residential <- residential_mr(grid, grid_meta, grid_dasymetric, residential_ratios)
 
 View(mrm_residential)
 mapview(mrm_residential, zcol="parking_min_residential")
@@ -144,8 +143,8 @@ pt_mr <- function(pt_grid, ratios){
   parking_total <- parking_long |>  # create an object with only the totals
     group_by(gid) |>
     summarise(
-      parking_min_pt = sum(parking_min, na.rm = TRUE),
-      parking_max_pt = sum(parking_max, na.rm = TRUE)
+      parking_min_pt_total = sum(parking_min, na.rm = TRUE),
+      parking_max_pt_total = sum(parking_max, na.rm = TRUE)
     ) |>
     ungroup()
 
@@ -162,14 +161,77 @@ pt_ratios <- read.csv("data/models/minimum_ratios/pt.csv")
 mrm_pt <- pt_mr(grid_ticketing_global, pt_ratios)
 
 View(mrm_pt)
-mapview(mrm_pt, zcol = "parking_min_pt")
+mapview(mrm_pt, zcol = "parking_min_pt_total")
 
 # 4. Schools minimum ratios function --------------------------------------
 
+schools_mr <- function(schools_grid, university_grid, ratios){
+  # Starting by standardizing and unifying schools/universities data
+  schools_grid <- schools_grid |>
+    rename(n_students_schools = n_students) |>
+    select(-X)
+  university_grid <- university_grid |>
+    rename(n_students_university = n_students) |>
+    select(-X)
+  all_schools_grid <- schools_grid |>
+    left_join(university_grid, by = "gid")
+
+  # Now joining the ratios
+  ratios_wide <- ratios |>
+    pivot_wider(
+      names_from = "category",
+      values_from = c(schools_min, schools_max),
+      names_glue = "{.value}_{category}"
+    )
+  all_schools_grid <- all_schools_grid |>
+    cross_join(ratios_wide) |>
+    mutate(
+      parking_min_childcare = n_students_childcare*schools_min_childcare,
+      parking_min_primary = n_students_primary_school*schools_min_primary,
+      parking_min_secondary = n_students_secondary_school*schools_min_secondary,
+      parking_min_university = n_students_university*schools_min_university,
+
+      parking_max_childcare = n_students_childcare*schools_max_childcare,
+      parking_max_primary = n_students_primary_school*schools_max_primary,
+      parking_max_secondary = n_students_secondary_school*schools_max_secondary,
+      parking_max_university = n_students_university*schools_max_university,
+
+      parking_min_schools_total = parking_min_childcare + parking_min_primary + parking_min_secondary + parking_min_university,
+      parking_max_schools_total = parking_max_childcare + parking_max_primary + parking_max_secondary + parking_max_university
+    )
+
+  parking_total <- grid |>
+    left_join(all_schools_grid, by = "gid")
+
+  return(parking_total)
+}
+
+schools_ratios <- read.csv("data/models/minimum_ratios/schools.csv")
+mrm_schools <- schools_mr(grid_pois_schools, grid_pois_universities, schools_ratios)
+
+View(mrm_schools)
+mapview(mrm_schools, zcol = "parking_min_schools_total")
 
 
-# 5. Write outputs --------------------------------------------------------
+# 5. Aggregate all data ---------------------------------------------------
+mrm_total <- grid |>
+  left_join(mrm_residential |> st_drop_geometry()) |>
+  left_join(mrm_poi |> st_drop_geometry()) |>
+  left_join(mrm_pt |> st_drop_geometry()) |>
+  left_join(mrm_schools |> st_drop_geometry())
+mrm_total <- mrm_total |>
+  mutate(
+    parking_min_total = parking_max_residential + parking_min_poi_total + parking_min_pt_total + parking_min_schools_total,
+    parking_max_total = parking_max_residential + parking_max_poi_total + parking_max_pt_total + parking_max_schools_total
+  )
+View(mrm_total)
+mapview(mrm_total, zcol = "parking_min_total")
+mapview(mrm_total, zcol = "parking_max_total")
+
+# 6. Write outputs --------------------------------------------------------
 write.csv(mrm_residential |> st_drop_geometry(), "data/outputs/minimum_ratios/residential.csv", row.names = FALSE)
 write.csv(mrm_poi |> st_drop_geometry(), "data/outputs/minimum_ratios/poi.csv", row.names = FALSE)
 write.csv(mrm_pt |> st_drop_geometry(), "data/outputs/minimum_ratios/pt.csv", row.names = FALSE)
+write.csv(mrm_schools |> st_drop_geometry(), "data/outputs/minimum_ratios/schools.csv", row.names = FALSE)
+write.csv(mrm_total |> st_drop_geometry(), "data/outputs/minimum_ratios/total.csv", row.names = FALSE)
 
