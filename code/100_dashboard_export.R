@@ -85,14 +85,25 @@ grid_dashboard <- grid |>
   # Models
   # > Minimum ratios
   left_join(
-    residential_mr |>
+    total_mr |>
       select(
         gid,
-        # model_mr_ratio_residential_min = residential_min,
-        # model_mr_ratio_residential_max = residential_max,
-        model_mr_parking_residential_min = parking_min_residential,
-        model_mr_parking_residential_max = parking_max_residential
-      ),
+        # Parking dimensioning
+        starts_with("parking_min"),
+        starts_with("parking_max"),
+        # Ratios 
+        starts_with("poi_min"),
+        starts_with("poi_max"),
+        starts_with("residential_min"),
+        starts_with("residential_max"),
+        starts_with("pt_min"),
+        starts_with("pt_max"),
+        starts_with("schools_min"),
+        starts_with("schools_max"),
+      ) |>
+      rename_with(~ paste0("model_mr_", .), -gid) |>
+      rename_with(~ stringr::str_replace(., "^(.*)_min_(.*)$", "\\1_\\2_min")) |>
+      rename_with(~ stringr::str_replace(., "^(.*)_max_(.*)$", "\\1_\\2_max")),
     by = "gid"
   )
 
@@ -102,6 +113,12 @@ names(grid_dashboard)
 
 
 ## Geographical aggregations ------------------------------------------------------
+poi_cols <- c(
+  grep("^model_mr_poi_", names(grid_dashboard), value = TRUE),
+  grep("^model_mr_residential_", names(grid_dashboard), value = TRUE),
+  grep("^model_mr_pt_", names(grid_dashboard), value = TRUE),
+  grep("^model_mr_schools_", names(grid_dashboard), value = TRUE)
+)
 col_to_agg <- c(
   # Raw data
   # > Dasymetric map (aggregate raw continuous values to eliminate cumulative ceiling bias)
@@ -149,11 +166,16 @@ col_to_agg <- c(
   pois_n_universities = "sum",
   # Models
   # > Minimum ratios
-  # model_mr_ratio_residential_min = "min",
-  # model_mr_ratio_residential_max = "max",
-  model_mr_parking_residential_min = "sum",
-  model_mr_parking_residential_max = "sum"
+  setNames(
+    rep("sum", sum(grepl("^model_mr_parking_", names(grid_dashboard)))),
+    grep("^model_mr_parking_", names(grid_dashboard), value = TRUE)
+  ),
+  setNames(
+    ifelse(grepl("_max$", poi_cols), "max", "min"),
+    poi_cols
+  )
 )
+col_to_agg
 
 cols_mutate <- function(aggregated_layer) {
   aggregated_layer <- aggregated_layer |>
@@ -325,3 +347,5 @@ st_write(
 
 str(grid_dashboard)
 str(parishes_dashboard)
+
+View(names(parishes_dashboard) |> data.frame())
