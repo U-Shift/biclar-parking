@@ -1,16 +1,18 @@
-# Script to create the minimum ratios model.
-# For the municipalities Almada and Seixal, the values used are based on municipality regulations (RMUE).
-# For the rest of the LMA, values are based on literature recommendations, since no bicycle parking regulations exist.
+# Script to create the minimum ratios model (issues #18 and #44).
+# For the municipalities Almada and Seixal, the values used for residential areas are based on municipality regulations (RMUE).
+# For the remaining categories, and the rest of the LMA, values are based on literature recommendations,
+# since no bicycle parking regulations exist.
 # Refer to https://github.com/U-Shift/biclar-parking/issues/9 (municipal regulations) and
 # https://github.com/U-Shift/biclar-parking/issues/7 (literature recommendations) for more details.
-# Complete methodology available at:
-# https://docs.google.com/document/d/1DSM_PcinC-S8Q3kiweb7OUQ05ckQvSMSx0THY80E_eI/edit?usp=drive_link
+
 
 # Code steps:
-# 1. Function to calculate residential minimum ratios. (WRAPPING UP)
-# 2. Function to calculate commercial and office minimum ratios. (NOT STARTED)
-# 3. Function to calculate POI minimum ratios. (IN PROGRESS)
-# 4. Aggregation of outputs from each function.
+# 1. Function to calculate minimum ratios for residential areas.
+# 2. Function to calculate minimum ratios for points-of-interest (POIs).
+# 3. Function to calculate minimum ratios for public transport (PT) stations.
+# 4. Function to calculate minimum ratios for schools and universities.
+# 5. Aggregation of all categories.
+# 6. Saving outputs.
 
 library(dplyr)
 library(sf)
@@ -62,8 +64,7 @@ mapview(mrm_residential, zcol="parking_min_residential")
 # Function to calculate minimum number of parking spots for points of interest (POIs) in each grid cell.
 # Parameters:
 # poi_grid - csv file with the area of each type of POI in each grid cell.
-# ratios - csv file with minimum and maximum parking ratio for each type of POI, as well as the respective unit.
-
+# ratios - csv file with minimum and maximum parking ratios for each type of POI, as well as the respective unit.
 poi_mr <- function(poi_grid, ratios){
   parking_long <- poi_grid |>
     st_drop_geometry() |>
@@ -111,8 +112,7 @@ mapview(mrm_poi, zcol = "parking_max_poi_total")
 # Function to calculate minimum number of parking spots for public transport (PT) stops/stations in each grid cell.
 # Parameters:
 # pt_grid - csv file with the number of PT validations per mode in each grid cell.
-# ratios - csv file with minimum and maximum parking ratio for each type of PT station, as well as the respective unit.
-
+# ratios - csv file with minimum and maximum parking ratios for each type of PT station, as well as the respective unit.
 pt_mr <- function(pt_grid, ratios){
   pt_grid_new <- grid |>
     left_join(pt_grid, by = "gid") |>
@@ -164,7 +164,11 @@ View(mrm_pt)
 mapview(mrm_pt, zcol = "parking_min_pt_total")
 
 # 4. Schools minimum ratios function --------------------------------------
-
+# Function to calculate minimum number of parking spots for educational establishments (schools and universities) in each grid cell.
+# Parameters:
+# schools_grid - csv file with the number of schools and respective number of students per category (childcare, primary, secondary) in each grid cell.
+# university_grid - csv file with the number of universities and respective number of students.
+# ratios - csv file with minimum and maximum parking ratios for each type of educational establishment, as well as the respective unit.
 schools_mr <- function(schools_grid, university_grid, ratios){
   # Starting by standardizing and unifying schools/universities data
   schools_grid <- schools_grid |>

@@ -35,3 +35,5 @@ grid_pois_area <- read.csv("data/processed/poi/buildings/poi_buildings_grid.csv"
 residential_mr <- read.csv("data/outputs/minimum_ratios/residential.csv")
 poi_mr <- read.csv("data/outputs/minimum_ratios/poi.csv")
 pt_mr <- read.csv("data/outputs/minimum_ratios/pt.csv")
+schools_mr <- read.csv("data/outputs/minimum_ratios/schools.csv")
+total_mr <- read.csv("data/outputs/minimum_ratios/total.csv")
