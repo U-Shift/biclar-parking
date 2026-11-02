@@ -65,7 +65,13 @@ grid_dashboard <- grid |>
   # > GBFS data
   left_join(
     grid_gbfs_bikes |>
-      select(gid, starts_with("avg_vehicles_per_update_")) |>
+      select(
+        gid, 
+        starts_with("avg_vehicles_per_update_"), 
+        starts_with("avg_bicycle_per_update_"), 
+        starts_with("avg_scooter_per_update_"),
+        n_operators = n_operators_all_0.24
+      ) |>
       rename_with(~ paste0("gbfs_", .), -gid)
   ) |>
   # > POIS
@@ -151,6 +157,7 @@ col_to_agg <- c(
     rep("sum", sum(grepl("^gbfs_avg", names(grid_dashboard)))),
     grep("^gbfs_avg", names(grid_dashboard), value = TRUE)
   ),
+  gbfs_n_operators = "max",
   # > POIS
   # >> Schools and universities #37
   pois_n_school_students = "sum",
