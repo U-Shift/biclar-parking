@@ -70,7 +70,7 @@ nrow(COS_GLPS) # 31104
 
 # sf::st_write(COS_GLPS, "data/geo/COS_GLPS.gpkg", delete_dsn = TRUE)
 # COS_GLPS <- sf::st_read("data/geo/COS_GLPS.gpkg")
-# mapview(COS_GLPS)
+# mapview(COS_GLPS, zcol="COS23_n4_L")
 table(COS_GLPS$COS23_n4_L)
 
 # > Remove water from COS (only when not surrounded by other polygons)
@@ -135,13 +135,36 @@ mapview(COS_GLPS_LAND_UNION, layer.name = "COS Land Union", col.regions = "#9966
 
 
 # > Cut CAOP_GLPS with COS_GLPS_LAND
-CAOP_GLPS_LAND <- CAOP_GLPS |>
+min_poly_area_m2 <- 10000 # Minimum polygon area in m² (e.g., 10000 m² = 1 ha)
+
+CAOP_GLPS_LAND_POLYS <- CAOP_GLPS |>
   st_intersection(COS_GLPS_LAND_UNION |> st_transform(st_crs(CAOP_GLPS))) |>
-  st_make_valid()
-nrow(CAOP_GLPS_LAND) # 188
+  st_make_valid() |>
+  st_collection_extract("POLYGON") |>
+  mutate(.row_id = row_number()) |>
+  st_cast("POLYGON") |>
+  mutate(.poly_area_m2 = as.numeric(st_area(st_transform(geom, 3763))))
+
+# Split into kept and removed polygons for validation
+CAOP_GLPS_LAND_REMOVED <- CAOP_GLPS_LAND_POLYS |>
+  filter(.poly_area_m2 < min_poly_area_m2)
+
+CAOP_GLPS_LAND_KEPT <- CAOP_GLPS_LAND_POLYS |>
+  filter(.poly_area_m2 >= min_poly_area_m2)
+
+nrow(CAOP_GLPS_LAND_REMOVED)
+mapview(CAOP_GLPS_LAND_KEPT, layer.name = "Land kept", col.regions = "#996633", alpha.regions = 0.3) +
+  mapview(CAOP_GLPS_LAND_REMOVED, layer.name = "Small polygons removed", col.regions = "#ff0000", color = "#ff0000", lwd = 2)
+
+# Recombine kept polygons and remove holes
+CAOP_GLPS_LAND <- CAOP_GLPS_LAND_KEPT |>
+  select(-.poly_area_m2) |>
+  group_by(.row_id) |>
+  summarise(across(-geom, first), geom = st_union(geom), .groups = "drop") |>
+  select(-.row_id) |>
+  nngeo::st_remove_holes()
+nrow(CAOP_GLPS_LAND)
 # mapview(CAOP_GLPS_LAND)
-# Make sure land has no holes either
-CAOP_GLPS_LAND <- nngeo::st_remove_holes(CAOP_GLPS_LAND)
 
 ## 4. Make sure each parish has one unique polygon ----------------------------------------------------
 # > For parishes with multiple polygons, choose the one with greatest area_ha, without loosing other attributes
@@ -151,7 +174,7 @@ CAOP_GLPS_LAND_UNIQUE_dtmnfr <- CAOP_GLPS_LAND |>
   ungroup()
 
 nrow(CAOP_GLPS_LAND_UNIQUE_dtmnfr) # 124
-mapview(CAOP_GLPS_LAND_UNIQUE_dtmnfr)
+mapview(CAOP_GLPS_LAND_UNIQUE_dtmnfr, zcol="municipio")
 
 mapview(
   CAOP_GLPS,
