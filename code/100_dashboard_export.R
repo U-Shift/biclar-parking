@@ -312,9 +312,9 @@ municipalities_dashboard <- municipalities_dashboard |> mutate(
 # Store output ------------------------------------------------------
 output_dir <- "data/dashboard_data"
 
-st_write(grid_dashboard, file.path(output_dir, "grid_dashboard.geojson"), delete_dsn = TRUE)
-st_write(parishes_dashboard, file.path(output_dir, "parishes_dashboard.geojson"), delete_dsn = TRUE)
-st_write(municipalities_dashboard, file.path(output_dir, "municipalities_dashboard.geojson"), delete_dsn = TRUE)
+st_write(grid_dashboard |> select(id), file.path(output_dir, "grid_dashboard.geojson"), delete_dsn = TRUE)
+st_write(parishes_dashboard |> select(id), file.path(output_dir, "parishes_dashboard.geojson"), delete_dsn = TRUE)
+st_write(municipalities_dashboard |> select(id), file.path(output_dir, "municipalities_dashboard.geojson"), delete_dsn = TRUE)
 
 write.csv(grid_dashboard |> st_drop_geometry(), file.path(output_dir, "grid_dashboard.csv"), row.names = FALSE)
 write.csv(parishes_dashboard |> st_drop_geometry(), file.path(output_dir, "parishes_dashboard.csv"), row.names = FALSE)
