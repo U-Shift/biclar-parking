@@ -66,9 +66,9 @@ grid_dashboard <- grid |>
   left_join(
     grid_gbfs_bikes |>
       select(
-        gid, 
-        starts_with("avg_vehicles_per_update_"), 
-        starts_with("avg_bicycle_per_update_"), 
+        gid,
+        starts_with("avg_vehicles_per_update_"),
+        starts_with("avg_bicycle_per_update_"),
         starts_with("avg_scooter_per_update_"),
         n_operators = n_operators_all_0.24
       ) |>
@@ -97,7 +97,7 @@ grid_dashboard <- grid |>
         # Parking dimensioning
         starts_with("parking_min"),
         starts_with("parking_max"),
-        # Ratios 
+        # Ratios
         starts_with("poi_min"),
         starts_with("poi_max"),
         starts_with("residential_min"),
@@ -280,17 +280,18 @@ parishes_dashboard <- parishes_dashboard |>
   mutate(name = gsub("União das freguesias do ", "UF ", name))
 
 # Round all numeric values to 2 digits (except ID columns like gid, pid, mid, id, *_id)
+cols_dont_round <- c("model_mr_poi_healthcare_centres_min", "model_mr_poi_healthcare_centres_max")
 grid_dashboard <- grid_dashboard |>
   select(-any_of(c(
     "dasymetric_population_raw", "dasymetric_population_adults_raw", "dasymetric_population_youth_raw",
     "dasymetric_population_elderly_raw", "dasymetric_population_women_raw", "dasymetric_households_raw",
     "dasymetric_buildings_raw", "dasymetric_buildings_pre1945_raw"
   ))) |>
-  mutate(across(where(is.numeric) & !matches("(^|_)(id|gid|pid|mid|nid)$|^id$", ignore.case = TRUE), ~ round(., 2)))
+  mutate(across(where(is.numeric) & !any_of(cols_dont_round) & !matches("(^|_)(id|gid|pid|mid|nid)$|^id$", ignore.case = TRUE), ~ round(., 2)))
 parishes_dashboard <- parishes_dashboard |>
-  mutate(across(where(is.numeric) & !matches("(^|_)(id|gid|pid|mid|nid)$|^id$", ignore.case = TRUE), ~ round(., 2)))
+  mutate(across(where(is.numeric) & !any_of(cols_dont_round) & !matches("(^|_)(id|gid|pid|mid|nid)$|^id$", ignore.case = TRUE), ~ round(., 2)))
 municipalities_dashboard <- municipalities_dashboard |>
-  mutate(across(where(is.numeric) & !matches("(^|_)(id|gid|pid|mid|nid)$|^id$", ignore.case = TRUE), ~ round(., 2)))
+  mutate(across(where(is.numeric) & !any_of(cols_dont_round) & !matches("(^|_)(id|gid|pid|mid|nid)$|^id$", ignore.case = TRUE), ~ round(., 2)))
 
 # Define relational ids (group_id for parent)
 grid_dashboard <- grid_dashboard |> mutate(
