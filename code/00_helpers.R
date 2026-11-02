@@ -135,7 +135,6 @@ aggregate_at_layer <- function(
 
   # Always include point counts 'n'
   summary_exprs <- list(n = dplyr::expr(dplyr::n()))
-  sum_cols <- character()
 
   for (col_str in names(agg_specs)) {
     if (!col_str %in% names(pts_to_agg)) next
@@ -147,18 +146,17 @@ aggregate_at_layer <- function(
       col_out <- if (single_measure) col_str else paste0(col_str, "_", m)
 
       if (m == "sum") {
-        summary_exprs[[col_out]] <- dplyr::expr(sum(!!col_sym, na.rm = TRUE))
-        sum_cols <- c(sum_cols, col_out)
+        summary_exprs[[col_out]] <- dplyr::expr(if (all(is.na(!!col_sym))) NA_real_ else sum(!!col_sym, na.rm = TRUE))
       } else if (m == "mean") {
-        summary_exprs[[col_out]] <- dplyr::expr(mean(!!col_sym, na.rm = TRUE))
+        summary_exprs[[col_out]] <- dplyr::expr(if (all(is.na(!!col_sym))) NA_real_ else mean(!!col_sym, na.rm = TRUE))
       } else if (m == "median") {
-        summary_exprs[[col_out]] <- dplyr::expr(median(!!col_sym, na.rm = TRUE))
+        summary_exprs[[col_out]] <- dplyr::expr(if (all(is.na(!!col_sym))) NA_real_ else median(!!col_sym, na.rm = TRUE))
       } else if (m == "min") {
-        summary_exprs[[col_out]] <- dplyr::expr(min(!!col_sym, na.rm = TRUE))
+        summary_exprs[[col_out]] <- dplyr::expr(if (all(is.na(!!col_sym))) NA_real_ else min(!!col_sym, na.rm = TRUE))
       } else if (m == "max") {
-        summary_exprs[[col_out]] <- dplyr::expr(max(!!col_sym, na.rm = TRUE))
+        summary_exprs[[col_out]] <- dplyr::expr(if (all(is.na(!!col_sym))) NA_real_ else max(!!col_sym, na.rm = TRUE))
       } else if (m == "sd") {
-        summary_exprs[[col_out]] <- dplyr::expr(sd(!!col_sym, na.rm = TRUE))
+        summary_exprs[[col_out]] <- dplyr::expr(if (all(is.na(!!col_sym))) NA_real_ else sd(!!col_sym, na.rm = TRUE))
       } else if (m == "n") {
         # n is already included
       }
@@ -173,11 +171,10 @@ aggregate_at_layer <- function(
     res <- layer |>
       dplyr::left_join(agg_df, by = id_var)
 
-    # Fill NA values for count and sums with 0
-    cols_to_fill_zero <- intersect(c("n", sum_cols), names(res))
-    if (length(cols_to_fill_zero) > 0) {
+    # Fill NA values for count 'n' with 0 (when a polygon has 0 matching points)
+    if ("n" %in% names(res)) {
       res <- res |>
-        dplyr::mutate(dplyr::across(dplyr::all_of(cols_to_fill_zero), ~ tidyr::replace_na(.x, 0)))
+        dplyr::mutate(n = tidyr::replace_na(n, 0L))
     }
   } else {
     res <- layer |>
