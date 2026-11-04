@@ -79,22 +79,31 @@ grid_dashboard <- grid |>
   left_join(
     grid_pois_schools |>
       select(-X) |>
-      rename_with(~ stringr::str_replace(., "n_students", "n_school_students")) |>
+      rename_with(~ stringr::str_replace(., "n_students", "n_students_school")) |>
+      rename_with(~ stringr::str_replace(., "n_schools", "n_poi_schools")) |>
       rename_with(~ paste0("pois_", .), -gid)
   ) |>
   left_join(
     grid_pois_universities |>
       select(-X) |>
-      rename_with(~ stringr::str_replace(., "n_students", "n_university_students")) |>
+      rename_with(~ stringr::str_replace(., "n_students", "n_students_university")) |>
+      rename_with(~ stringr::str_replace(., "n_faculties", "n_poi_faculties")) |>
+      rename_with(~ stringr::str_replace(., "n_universities", "n_poi_universities")) |>
       rename_with(~ paste0("pois_", .), -gid)
+  ) |>
+  mutate(
+    pois_n_students_total = pois_n_students_school + pois_n_students_university
   ) |>
   # >> Other POIs
   left_join(
     grid_pois |>
-      rename_with(~ stringr::str_replace(., "poi_", "pois_n_"))
+      rename_with(~ stringr::str_replace(., "poi_", "pois_n_poi_"))
   ) |>
-
-
+  mutate(
+    pois_n_poi_total = pois_n_poi_schools + pois_n_poi_faculties + pois_n_poi_cafe_restaurant + pois_n_poi_office_industry +
+      pois_n_poi_retail_small + pois_n_poi_healthcare_centres + pois_n_poi_recreational_area + pois_n_poi_cultural +
+      pois_n_poi_sports_facility + pois_n_poi_hotel_hostel + pois_n_poi_retail_large + pois_n_poi_bar
+  ) |>
   # Models
   # > Minimum ratios
   left_join(
@@ -165,19 +174,11 @@ col_to_agg <- c(
     grep("^gbfs_avg", names(grid_dashboard), value = TRUE)
   ),
   gbfs_n_operators = "max",
-  # > POIS
-  # >> Schools and universities #37
-  pois_n_school_students = "sum",
-  pois_n_schools = "sum",
-  pois_n_school_students_childcare = "sum",
-  pois_n_school_students_primary_school = "sum",
-  pois_n_school_students_secondary_school = "sum",
-  pois_n_schools_childcare = "sum",
-  pois_n_schools_primary_school = "sum",
-  pois_n_schools_secondary_school = "sum",
-  pois_n_university_students = "sum",
-  pois_n_faculties = "sum",
-  pois_n_universities = "sum",
+  # > POIS #34 and #37 (includes nº of students in schools)
+  setNames(
+    rep("sum", sum(grepl("^pois_n_", names(grid_dashboard)))),
+    grep("^pois_n_", names(grid_dashboard), value = TRUE)
+  ),
   # Models
   # > Minimum ratios
   setNames(
@@ -320,9 +321,9 @@ municipalities_dashboard <- municipalities_dashboard |> mutate(
 # Store output ------------------------------------------------------
 output_dir <- "data/dashboard_data"
 
-st_write(grid_dashboard |> select(id), file.path(output_dir, "grid_dashboard.geojson"), delete_dsn = TRUE)
-st_write(parishes_dashboard |> select(id), file.path(output_dir, "parishes_dashboard.geojson"), delete_dsn = TRUE)
-st_write(municipalities_dashboard |> select(id), file.path(output_dir, "municipalities_dashboard.geojson"), delete_dsn = TRUE)
+# st_write(grid_dashboard |> select(id), file.path(output_dir, "grid_dashboard.geojson"), delete_dsn = TRUE)
+# st_write(parishes_dashboard |> select(id), file.path(output_dir, "parishes_dashboard.geojson"), delete_dsn = TRUE)
+# st_write(municipalities_dashboard |> select(id), file.path(output_dir, "municipalities_dashboard.geojson"), delete_dsn = TRUE)
 
 write.csv(grid_dashboard |> st_drop_geometry(), file.path(output_dir, "grid_dashboard.csv"), row.names = FALSE)
 write.csv(parishes_dashboard |> st_drop_geometry(), file.path(output_dir, "parishes_dashboard.csv"), row.names = FALSE)
