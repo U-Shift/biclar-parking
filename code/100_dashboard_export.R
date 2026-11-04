@@ -88,6 +88,13 @@ grid_dashboard <- grid |>
       rename_with(~ stringr::str_replace(., "n_students", "n_university_students")) |>
       rename_with(~ paste0("pois_", .), -gid)
   ) |>
+  # >> Other POIs
+  left_join(
+    grid_pois |>
+      rename_with(~ stringr::str_replace(., "poi_", "pois_n_"))
+  ) |>
+
+
   # Models
   # > Minimum ratios
   left_join(
