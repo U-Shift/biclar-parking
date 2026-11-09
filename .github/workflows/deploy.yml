@@ -1,0 +1,51 @@
+name: Deploy Documents & Slides to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'documents/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v4
+
+      - name: Set up Quarto ⚙️
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Render Slides 🎞️
+        run: |
+          for qmd in documents/slides/*/*.qmd; do
+            if [ -f "$qmd" ]; then
+              quarto render "$qmd"
+            fi
+          done
+
+      - name: Prepare Output Directory 📦
+        run: |
+          if [ -f "documents/_quarto.yml" ]; then
+            # When the Methodological Report Quarto project is added,
+            # rendering documents/ outputs to documents/_book (which includes slides/ via resources)
+            quarto render documents
+          else
+            # Until the Methodological Report is ready, stage slides/ under documents/_book
+            mkdir -p documents/_book
+            cp -r documents/slides documents/_book/slides
+          fi
+
+      - name: Deploy to GitHub Pages 🚀
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: documents/_book
+          branch: gh-pages
+
