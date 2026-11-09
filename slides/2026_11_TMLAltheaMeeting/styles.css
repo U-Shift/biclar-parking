@@ -200,6 +200,16 @@
     font-size: 0.9em;
 }
 
+/* --- References --- */
+
+div[id="refs"] {
+    font-size: 0.85em;
+}
+
+div[id="refs"] .csl-entry {
+    margin-bottom: 0.8em !important;
+}
+
 /* --- Footer & slide number --- */
 
 .reveal .slide-number {

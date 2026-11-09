@@ -33,7 +33,26 @@
       margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
       vertical-align: middle;
     }
-  </style>
+    /* CSS for citations */
+    div.csl-bib-body { }
+    div.csl-entry {
+      clear: both;
+    }
+    .hanging-indent div.csl-entry {
+      margin-left:2em;
+      text-indent:-2em;
+    }
+    div.csl-left-margin {
+      min-width:2em;
+      float:left;
+    }
+    div.csl-right-inline {
+      margin-left:2em;
+      padding-left:1em;
+    }
+    div.csl-indent {
+      margin-left: 2em;
+    }  </style>
   <link rel="stylesheet" href="slides_files/libs/revealjs/dist/theme/quarto-0f7bd0ba7a61fbf569e8aacc3e942c7c.css">
   <link rel="stylesheet" href="styles.css">
   <link href="slides_files/libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
@@ -133,106 +152,236 @@
     <div class="slides">
 
 
-<section id="section" class="slide level2 unlisted center" data-background-image="images/banner.jpg" data-background-opacity="0.08">
+<section id="section" class="slide level2 unlisted center">
 <h2></h2>
-<div style="text-align: center; margin-top: 0.5em;">
-<h1 class="title" style="margin-bottom: 0.2em;">
-biclaR <span style="color: #8EA271;">Parking</span>
+<div style="text-align: center; margin-top: 0.3em;">
+<h1 class="title" style="margin-bottom: 0.1em;">
+bicla<span style="color: #8EA271;">R</span> <span style="color: #fd0;">Parking</span>
 </h1>
-<p><img data-src="images/logo/logo_horizontal.png" style="margin-top: 0.2em; margin-bottom: 0.4em;" width="520"></p>
-<div style="font-size: 0.85em; color: #424141; margin-top: 0.6em; font-weight: 600;">
-<p>Miguel Alvelos · Gonçalo Matos · Francisco Valério · Rosa Félix · Filipe Moura</p>
+<h3 style="font-size: 0.95em; color: #555; margin-top: 0.2em; margin-bottom: 0.5em; font-weight: 400;">
+Deliverable 2: Model Conceptualization &amp; Interactive Prototype (V0.1)
+</h3>
+<p><img data-src="images/logo/logo_horizontal.png" style="margin-top: 0.1em; margin-bottom: 0.3em;" width="460"></p>
+<div style="font-size: 0.82em; color: #424141; margin-top: 0.5em; font-weight: 600;">
+<p>Miguel Alvelos · Gonçalo F. Matos · Francisco Valério · Rosa Félix · Filipe Moura</p>
 </div>
-<div style="margin-top: 1.4em; display: flex; flex-direction: column; align-items: center; gap: 0.8em;">
-<p><img src="images/logo_acknowledgement_tml.png" style="max-height: 48px; width: auto;"> <img src="images/logo_althea.png" style="max-height: 44px; width: auto;"></p>
+<div style="margin-top: 1.2em; display: flex; flex-direction: column; align-items: center; gap: 0.7em;">
+<p><img src="images/logo_acknowledgement_tml.png" style="max-height: 44px; width: auto;"> <img src="images/logo_althea.png" style="max-height: 40px; width: auto;"></p>
 </div>
 </div>
 </section>
 <section id="context-original-biclar" class="slide level2 center">
 <h2>Context: “original” biclaR</h2>
 
-<img data-src="images/biclar_original.png" class="quarto-figure quarto-figure-center r-stretch" style="width:95.0%"><div style="text-align: center; font-size: 0.92em; margin-top: 0.3em;">
-<p>Tool to help plan <strong>AML’s cycling network</strong>, based on different <strong>trip patterns</strong> and <strong>modal share objectives</strong>.</p>
+<img data-src="images/biclar_original.png" class="quarto-figure quarto-figure-center r-stretch" style="width:88.0%"><div style="text-align: center; font-size: 0.88em; margin-top: 0.2em;">
+<p><strong>biclaR</strong> <span class="citation" data-cites="Felix_biclaR_2022">(<a href="#/references" role="doc-biblioref" onclick="">Félix et al. 2022</a>)</span>: Tool to help plan <strong>AML’s cycling network</strong>, based on different trip patterns and modal share objectives.</p>
+<div class="fragment">
+<p><strong>biclaR Parking</strong>: Extension to <strong>identify, dimension, and prioritize bicycle parking infrastructure</strong> across the AML.</p>
+</div>
 </div>
 </section>
-<section id="objective" class="slide level2 center">
-<h2>Objective</h2>
-<ul>
-<li><strong>Tool for implementation and dimensioning of bike parking infrastructure.</strong></li>
-<li><strong>Models proposed:</strong></li>
-</ul>
-<div class="quarto-layout-panel" data-layout-ncol="2" style="margin-top: 0.4em;">
-<div class="quarto-layout-row">
-<div class="dim-card quarto-layout-cell" style="flex-basis: 50.0%;justify-content: flex-start;">
-<p><strong>📏 Minimum ratios</strong><br>
-Minimum nº of parking spots required by local regulations or literature, according to land use (<em>residential, POI, PT station, school</em>).</p>
+<section id="project-chronology" class="slide level2 center">
+<h2>Project Chronology</h2>
+
+<img data-src="images/gant_chart.png" class="quarto-figure quarto-figure-center r-stretch" style="width:98.0%"><div class="fragment" style="text-align: center; font-size: 0.8em; margin-top: 0.2em;">
+<p>📍 <strong>Status Report: E2</strong> (<em>Model Conceptualization &amp; Data Systematization</em>) + <strong>E3 / V0.1</strong> (<em>Initial Interactive Prototype</em> with Minimum Ratios Model &amp; base layers)</p>
 </div>
-<div class="dim-card quarto-layout-cell" style="flex-basis: 50.0%;justify-content: flex-start;">
-<p><strong>🛍️ Short-term</strong><br>
-Focused on short daytime trips (<em>e.g.&nbsp;to commercial areas</em>).</p>
-</div>
-</div>
-<div class="quarto-layout-row">
-<div class="dim-card quarto-layout-cell" style="flex-basis: 50.0%;justify-content: flex-start;">
-<p><strong>🏠💼 Long-term</strong><br>
-Focused on both ends of commuting trips (<em>residential and work</em>).</p>
-</div>
-<div class="dim-card quarto-layout-cell" style="flex-basis: 50.0%;justify-content: flex-start;">
-<p><strong>🚆 Intermodal</strong><br>
-Focused on first and last mile of journeys made by <strong>PT</strong>.</p>
-</div>
-</div>
-</div>
-<ul>
-<li><strong>Modal share targets:</strong> <span class="target-badge">2%</span> <span class="target-badge">4%</span> <span class="target-badge">10%</span></li>
-</ul>
 </section>
-<section id="data-sources-and-tools" class="slide level2 center">
-<h2>Data sources and tools</h2>
+<section>
+<section id="base-information-data-sources" class="title-slide slide level1 section-slide center" data-transition="fade-in slide-out" data-background-color="#00330b">
+<h1>1. Base Information &amp; Data Sources</h1>
+
+</section>
+<section id="spatial-units-disaggregation" class="slide level2 center">
+<h2>Spatial Units &amp; Disaggregation</h2>
+<div class="fragment">
 <ul>
-<li><strong>H3 resolution 9</strong> grid.</li>
-<li><strong>Dasymetric population map:</strong><br>
-<span class="flow-pill">Census</span> <span class="math inline">\(\leftrightarrow\)</span> <span class="flow-pill">Land use</span> <span class="math inline">\(\leftrightarrow\)</span> <span class="flow-pill">Building data (GBA)</span></li>
+<li><strong>Three geographic scales of analysis</strong>:
+<ul>
+<li><strong>H3 Resolution 9 grid</strong>: <strong>25,380 hexagons</strong> in the AML (~<span class="math inline">\(0.10\text{ km}^2\)</span> area, ~<span class="math inline">\(200.7\text{ m}\)</span> edge) — minimum analysis unit</li>
+<li><strong>Parish (<em>Freguesia</em>)</strong>: <strong>124</strong> units · <strong>Municipality (<em>Município</em>)</strong>: <strong>18</strong> units</li>
+</ul></li>
 </ul>
-<div style="margin-top: 0.6em;">
+</div>
+<div class="fragment">
+<ul>
+<li><strong>Dasymetric population &amp; household distribution</strong>:<br>
+<span class="flow-pill">Census 2021 (BGRI)</span> <span class="math inline">\(\leftrightarrow\)</span> <span class="flow-pill">Land Use (COS 2023)</span> <span class="math inline">\(\leftrightarrow\)</span> <span class="flow-pill">3D Building Volume (GBA)</span>
+<ul>
+<li>Redistributes residents, households, age groups &amp; building epochs (e.g.&nbsp;pre-1945) to H3 cells proportionally to residential building volume.</li>
+</ul></li>
+</ul>
+</div>
+<div class="fragment">
+<ul>
+<li><strong>OD Matrix Disaggregation (IMOB 2017)</strong>:
+<ul>
+<li>Stochastic <strong>Jittering</strong> (<code>odjitter</code>) weighted by <strong>Global Building Atlas (GBA)</strong> building volumes to match short cycling trip granularity.</li>
+</ul></li>
+</ul>
+</div>
+</section>
+<section id="systematization-of-data-sources" class="slide level2 center">
+<h2>Systematization of Data Sources</h2>
+<div style="font-size: 0.84em;">
 <table class="caption-top">
 <colgroup>
-<col style="width: 50%">
-<col style="width: 50%">
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
 </colgroup>
 <thead>
 <tr class="header">
-<th>Source</th>
-<th>Data / Used for</th>
+<th>Dimension</th>
+<th>Sources</th>
+<th>Details</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td><strong>OpenStreetMap (OSM)</strong></td>
-<td>Buildings, POIs, cycling network, parking infrastructure, …</td>
+<td><strong>Cycling &amp; Road Network</strong></td>
+<td><strong>OSM</strong> + <strong>TML</strong> + <strong>Municipalities</strong></td>
+<td>Validated road/cycling network (AML + Cascais, Lisboa, Oeiras, Seixal, Sintra) classified by segregation level</td>
 </tr>
 <tr class="even">
-<td><strong>TML</strong></td>
-<td>Validations at PT stops</td>
+<td><strong>Existing Bike Parking</strong></td>
+<td><strong>OSM</strong> + <strong>MUBi</strong> + <strong>CML</strong></td>
+<td><em>Cidade Ciclável</em> collaborative map + Lisbon municipal database + OSM</td>
 </tr>
 <tr class="odd">
-<td><strong>Micro-mobility operators</strong></td>
-<td>GBFS data</td>
+<td><strong>Points of Interest (POIs)</strong></td>
+<td><strong>OSM</strong> (10 cat.) + <strong>DGEEC</strong> (4 cat.)</td>
+<td>Retail, services, health, culture, leisure, sports, offices + student counts across 4 education levels</td>
 </tr>
 <tr class="even">
-<td><strong>PSP &amp; GNR</strong> <img src="images/icons/psp.png" height="22" style="vertical-align: middle; margin-left: 6px;"> <img src="images/icons/gnr.png" height="26" style="vertical-align: middle; margin-left: 4px;"></td>
-<td>Data on bike thefts</td>
+<td><strong>Public Transport (PT)</strong></td>
+<td><strong>TML Go (GTFS)</strong> + <strong>Ticketing</strong></td>
+<td>Aggregated AML GTFS (<code>tidytransit</code>, <code>GTFShift</code>), interface hierarchy &amp; daily validations per stop/hub</td>
+</tr>
+<tr class="odd">
+<td><strong>Bike Thefts</strong></td>
+<td><strong>PSP</strong> &amp; <strong>GNR</strong> <img src="images/icons/psp.png" height="18" style="vertical-align: middle; margin-left: 4px;"> <img src="images/icons/gnr.png" height="22" style="vertical-align: middle; margin-left: 3px;"></td>
+<td>5-year aggregated reported bicycle thefts (urban &amp; rural jurisdictions)</td>
+</tr>
+<tr class="even">
+<td><strong>Micromobility</strong></td>
+<td><strong>GBFS</strong> (Bird, Lime, Bolt, Gira)</td>
+<td>High-frequency (1-min) parked vehicle locations across Lisboa, Almada, Cascais &amp; Oeiras</td>
 </tr>
 </tbody>
 </table>
 </div>
+</section></section>
+<section>
+<section id="dimensioning-models" class="title-slide slide level1 section-slide center" data-transition="fade-in slide-out" data-background-color="#00330b">
+<h1>2. Dimensioning Models</h1>
 
 </section>
+<section id="overview-of-the-4-models" class="slide level2 center">
+<h2>Overview of the 4 Models</h2>
+<p>Daily bicycle parking dimensioning across <strong>4 complementary models</strong>:</p>
+<div class="quarto-layout-panel" style="margin-top: 0.4em;" data-layout-ncol="2">
+<div class="quarto-layout-row">
+<div class="dim-card fragment quarto-layout-cell" style="flex-basis: 50.0%;justify-content: flex-start;">
+<p><strong>📏 3.A. Minimum Ratios Model</strong><br>
+Baseline parking spots required by municipal regulations (<em>Almada, Seixal</em>) and European literature according to land use (<em>residential, POIs, PT stations, schools</em>).</p>
+</div>
+<div class="dim-card fragment quarto-layout-cell" style="flex-basis: 50.0%;justify-content: flex-start;">
+<p><strong>☀️ 3.B. Daytime Model (Short to Medium Term)</strong><br>
+Up to 2h (<em>Sheffield</em> stands) and 2–8h (enhanced security) for daytime work/study &amp; utilitarian trips.</p>
+</div>
+</div>
+<div class="quarto-layout-row">
+<div class="dim-card fragment quarto-layout-cell" style="flex-basis: 50.0%;justify-content: flex-start;">
+<p><strong>🌙 3.C. Nighttime Model (Long Term)</strong><br>
+Overnight parking (<strong>&gt;8h</strong>) in residential areas for return-home trips.</p>
+</div>
+<div class="dim-card fragment quarto-layout-cell" style="flex-basis: 50.0%;justify-content: flex-start;">
+<p><strong>🚆 3.D. Intermodal Model</strong><br>
+First &amp; last mile cycling combined with <strong>PT</strong>: bike on board (<em>ferries/trains</em>) or parked at higher-hierarchy PT interfaces.</p>
+</div>
+</div>
+</div>
+<div class="fragment">
+<ul>
+<li><strong>Demand-model scenarios (ENMAC targets):</strong> <span class="target-badge">2% (Baseline)</span> <span class="target-badge">4% (2025)</span> <span class="target-badge">10% (2030)</span></li>
+</ul>
+</div>
+</section>
+<section id="model-specification-socio-territorial-equity" class="slide level2 center">
+<h2>Model Specification &amp; Socio-Territorial Equity</h2>
+<div class="columns">
+<div class="column fragment" style="width:52%;">
+<h3 id="minimum-ratios-implemented-in-v0.1">Minimum Ratios (Implemented in V0.1)</h3>
+<p><span class="math display">\[N_c = \sum_i \alpha_i X_i\]</span></p>
+<ul>
+<li><strong>Residential</strong>: <span class="math inline">\(\alpha_i \times \text{households}\)</span></li>
+<li><strong>POIs</strong>: <span class="math inline">\(\alpha_i \times \text{area / capacity}\)</span> (10 subcategories)</li>
+<li><strong>PT Stations</strong>: <span class="math inline">\(\alpha_i \times \text{daily validations}\)</span></li>
+<li><strong>Education</strong>: <span class="math inline">\(\alpha_i \times \text{students}\)</span> (4 levels)</li>
+<li><em>Static cumulative benchmark</em> (min &amp; max ratios)</li>
+</ul>
+</div><div class="column fragment" style="width:48%;">
+<h3 id="demand-routing-impact-assessment">Demand Routing &amp; Impact Assessment</h3>
+<ul>
+<li><strong>Routing (<code>r5r</code>)</strong>: Jittered IMOB trips routed on <em>direct</em> &amp; <em>safe</em> profiles with slope (<span class="math inline">\(\le 5\text{ km}\)</span> conventional, <span class="math inline">\(\le 10\text{ km}\)</span> e-bike)</li>
+<li><strong>Socio-Territorial Equity</strong>:
+<ul>
+<li>Supply vs.&nbsp;demand deficit crossed with <strong>housing vulnerability</strong> (e.g.&nbsp;no garage/elevator) &amp; demographics</li>
+<li><strong>WHO HEAT for Cycling</strong>:
+<ul>
+<li>🏥 <strong>Health</strong>: Premature mortality avoided (physical activity, air pollution, crash risk)</li>
+<li>🌱 <strong>Environment</strong>: <span class="math inline">\(\text{tCO}_2\text{eq}\)</span> avoided</li>
+<li>💶 Monetized in <strong>€</strong> across all 3 scales</li>
+</ul></li>
+</ul></li>
+</ul>
+</div></div>
+</section></section>
+<section>
+<section id="interactive-prototype-v0.1" class="title-slide slide level1 section-slide center" data-transition="fade-in slide-out" data-background-color="#00330b">
+<h1>3. Interactive Prototype (V0.1)</h1>
+
+</section>
+<section id="dashboard-prototype" class="slide level2 center">
+<h2>Dashboard Prototype</h2>
+<div class="columns">
+<div class="column" style="width:52%;">
+<p>Available at:<br>
+🔗 <strong><a href="https://ushift.pt/apps/biclar">ushift.pt/apps/biclar</a></strong></p>
+<p><br></p>
+<p><strong>Already available in V0.1:</strong></p>
+<ul>
+<li class="fragment">🗺️ <strong>Multi-scale exploration</strong>: H3 grid (res 9), Parish &amp; Municipality</li>
+<li class="fragment">📏 <strong>Minimum Ratios Model</strong>: Aggregated &amp; disaggregated (<em>Residential, POIs, PT, Schools</em> — min/max)</li>
+<li class="fragment">📊 <strong>Base &amp; Contextual Layers</strong>: Dasymetric population, buildings, POIs, student counts, cycling network segregation, existing parking, PT validations, GBFS &amp; PSP/GNR bike thefts</li>
+<li class="fragment">📥 <strong>Open data download</strong> (GeoJSON &amp; CSV)</li>
+</ul>
+</div><div class="column" style="width:48%;">
+<div class="quarto-figure quarto-figure-center">
+<figure>
+<p><img data-src="images/dashboard.png" class="quarto-figure quarto-figure-center"></p>
+</figure>
+</div>
+<div style="text-align: center; margin-top: 1.2em;">
+<p><a href="https://ushift.pt/apps/biclar" target="_blank" style="font-size: 1.15em; background-color: #00330b; color: #ffdd00; padding: 0.55em 1.2em; border-radius: 8px; text-decoration: none; font-weight: bold;"> 🚀 Dashboard </a></p>
+</div>
+</div></div>
+</section>
+<section id="references" class="slide level2 smaller scrollable" data-visibility="uncounted">
+<h2>References</h2>
+<div id="refs" class="references csl-bib-body hanging-indent" role="list">
+<div id="ref-Felix_biclaR_2022" class="csl-entry" role="listitem">
+Félix, Rosa, Robin Lovelace, and Filipe Moura. 2022. <em><span class="nocase">biclaR: Ferramenta de apoio ao planeamento da rede cicl<span class="nocase">á</span>vel na <span class="nocase">á</span>rea metropolitana de Lisboa</span></em>. CERIS - Instituto Superior T<span>é</span>cnico e Transportes Metropolitanos de Lisboa. <a href="https://biclar.tmlmobilidade.pt">https://biclar.tmlmobilidade.pt</a>.
+</div>
+</div>
+
+</section></section>
     </div>
   <div class="quarto-auto-generated-content" style="display: none;">
 <p><img src="images/logo/logo_horizontal.png" class="slide-logo"></p>
 <div class="footer footer-default">
-<p>Alvelos, Matos, Valério, Félix, Moura — biclaR Parking</p>
+<p>Alvelos, Matos, Valério, Félix, Moura — biclaR Parking (Deliverable E2 &amp; Prototype V0.1)</p>
 </div>
 </div></div>
 
