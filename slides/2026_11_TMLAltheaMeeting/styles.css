@@ -1,0 +1,219 @@
+/* =============================================
+   biclaR Parking – Presentation Styles
+   Based on IMPT NECTAR 2026 Presentation Styles
+   ============================================= */
+
+/* --- Fonts Import --- */
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600&family=Libre+Franklin:wght@700&display=swap');
+
+/* Fallback to Franklin Gothic if local, otherwise Libre Franklin */
+.reveal {
+    font-family: 'Barlow', sans-serif;
+    background-color: #FAF1E2;
+}
+
+/* --- Typography & base colors --- */
+
+.reveal p {
+    color: #424141;
+    font-size: 0.9em;
+    font-weight: 400;
+}
+
+.reveal a {
+    color: #b87d00;
+}
+
+.reveal ul,
+.reveal ol,
+.reveal li {
+    color: #555555;
+    font-size: 0.92em;
+}
+
+.slide-1em-list ul,
+.slide-1em-list li {
+    font-size: 1em !important;
+}
+
+.reveal ul ul,
+.reveal ol ol {
+    font-size: 0.85em;
+    color: #666666;
+}
+
+/* --- Headings --- */
+
+.reveal h1,
+.reveal h2,
+.reveal h3,
+.reveal h4,
+.reveal h5,
+.reveal h6 {
+    font-family: 'Franklin Gothic', 'Libre Franklin', sans-serif;
+    font-weight: bold;
+}
+
+.reveal h1 {
+    font-size: 3.2em;
+    color: #00330b;
+}
+
+.reveal h2 {
+    font-family: 'Barlow', sans-serif;
+    font-weight: 600;
+    font-size: 1.55em;
+    color: #00330b;
+}
+
+.reveal h3 {
+    font-family: 'Barlow', sans-serif;
+    font-weight: 600;
+    font-size: 1.25em;
+    color: #5b7340;
+}
+
+.reveal h4 {
+    font-family: 'Barlow', sans-serif;
+    font-weight: 600;
+    font-size: 1.05em;
+    color: #b87d00;
+}
+
+/* --- Title slide custom classes --- */
+
+.title {
+    font-family: 'Franklin Gothic', 'Libre Franklin', sans-serif !important;
+    font-weight: bold !important;
+    font-size: 64px !important;
+    line-height: 1.15em !important;
+    color: #00330b !important;
+}
+
+.subtitle {
+    font-family: 'Barlow', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 34px !important;
+    color: #5b7340 !important;
+    margin-top: 10px !important;
+}
+
+/* --- Section slides --- */
+
+.section-slide h1 {
+    color: #FAF1E2 !important;
+    font-size: 2.4em;
+}
+
+.section-slide h2 {
+    color: #ffdd00 !important;
+}
+
+/* --- Figures & captions --- */
+
+.reveal figcaption,
+.reveal .caption {
+    font-size: 0.52em !important;
+    color: #666666 !important;
+    margin-top: 2px !important;
+    text-align: center !important;
+    font-weight: 300;
+}
+
+/* --- Tables --- */
+
+.reveal table {
+    font-size: 0.78em;
+    line-height: 1.5 !important;
+    border-collapse: collapse !important;
+    width: auto !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+.reveal table th,
+.reveal table td {
+    border: none;
+    box-shadow: none !important;
+    text-align: left;
+    padding: 0.28em 0.8em !important;
+    color: #424141;
+    vertical-align: middle;
+}
+
+.reveal table thead {
+    border-bottom: 2px solid #00330b !important;
+}
+
+.reveal table tr:nth-child(even) {
+    background-color: rgba(142, 162, 113, 0.12);
+}
+
+/* --- Utility layout --- */
+
+.v-center-container {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: center !important;
+    height: 100% !important;
+}
+
+.h-center-text {
+    text-align: center !important;
+}
+
+.h-center-text ul {
+    display: inline-block !important;
+    text-align: left !important;
+}
+
+/* --- Dimension / Model cards --- */
+
+.dim-card {
+    margin-bottom: 0.5em;
+    font-size: 0.84em;
+    line-height: 1.38;
+}
+
+/* --- Badge pills --- */
+
+.target-badge {
+    display: inline-block;
+    background-color: #00330b;
+    color: #ffdd00;
+    font-weight: 600;
+    padding: 0.15em 0.65em;
+    border-radius: 6px;
+    margin: 0 0.2em;
+    font-size: 0.95em;
+}
+
+.flow-pill {
+    display: inline-block;
+    background-color: rgba(0, 51, 11, 0.08);
+    border: 1px solid rgba(0, 51, 11, 0.25);
+    color: #00330b;
+    font-weight: 600;
+    padding: 0.12em 0.55em;
+    border-radius: 6px;
+    font-size: 0.9em;
+}
+
+/* --- Footer & slide number --- */
+
+.reveal .slide-number {
+    font-size: 0.6em;
+    color: #00330b;
+}
+
+/* --- Blockquote --- */
+
+.reveal blockquote {
+    border-left: 4px solid #8EA271;
+    padding-left: 0.8em;
+    color: #00330b;
+    background: rgba(142, 162, 113, 0.12);
+    border-radius: 0 4px 4px 0;
+}
+
