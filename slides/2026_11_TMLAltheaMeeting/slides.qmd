@@ -1,0 +1,94 @@
+---
+format:
+  revealjs:
+    title-slide: false
+    theme: default
+    fontsize: 28px
+    slide-number: true
+    preview-links: auto
+    output-file: index
+    css: styles.css
+    center: true
+    footer: 'Alvelos, Matos, Valério, Félix, Moura — biclaR Parking'
+    logo: images/logo/logo_horizontal.png
+execute:
+  echo: false
+editor:
+  render-on-save: true
+---
+
+## {.unlisted background-image="images/banner.jpg" background-opacity="0.08"}
+
+::::: {style="text-align: center; margin-top: 0.5em;"}
+
+<h1 class="title" style="margin-bottom: 0.2em;">
+biclaR <span style="color: #8EA271;">Parking</span>
+</h1>
+
+![](images/logo/logo_horizontal.png){width="520" style="margin-top: 0.2em; margin-bottom: 0.4em;"}
+
+<div style="font-size: 0.85em; color: #424141; margin-top: 0.6em; font-weight: 600;">
+Miguel Alvelos · Gonçalo Matos · Francisco Valério · Rosa Félix · Filipe Moura
+</div>
+
+<div style="margin-top: 1.4em; display: flex; flex-direction: column; align-items: center; gap: 0.8em;">
+<img src="images/logo_acknowledgement_tml.png" style="max-height: 48px; width: auto;" />
+<img src="images/logo_althea.png" style="max-height: 44px; width: auto;" />
+</div>
+
+:::::
+
+## Context: “original” biclaR
+
+![](images/biclar_original.png){fig-align="center" width="95%"}
+
+::: {style="text-align: center; font-size: 0.92em; margin-top: 0.3em;"}
+Tool to help plan **AML’s cycling network**, based on different **trip patterns** and **modal share objectives**.
+:::
+
+## Objective
+
+- **Tool for implementation and dimensioning of bike parking infrastructure.**
+- **Models proposed:**
+
+::: {layout-ncol="2" style="margin-top: 0.4em;"}
+
+::: {.dim-card style="background: #e8f4fd; border-left: 4px solid #2c6fad; padding: 0.8em 1em; border-radius: 6px;"}
+**📏 Minimum ratios**  
+Minimum nº of parking spots required by local regulations or literature, according to land use (*residential, POI, PT station, school*).
+:::
+
+::: {.dim-card style="background: #fff8e1; border-left: 4px solid #ffc107; padding: 0.8em 1em; border-radius: 6px;"}
+**🛍️ Short-term**  
+Focused on short daytime trips (*e.g. to commercial areas*).
+:::
+
+::: {.dim-card style="background: #e8f8ee; border-left: 4px solid #28a745; padding: 0.8em 1em; border-radius: 6px;"}
+**🏠💼 Long-term**  
+Focused on both ends of commuting trips (*residential and work*).
+:::
+
+::: {.dim-card style="background: #fde8e8; border-left: 4px solid #dc3545; padding: 0.8em 1em; border-radius: 6px;"}
+**🚆 Intermodal**  
+Focused on first and last mile of journeys made by **PT**.
+:::
+
+:::
+
+- **Modal share targets:** [2%]{.target-badge} [4%]{.target-badge} [10%]{.target-badge}
+
+## Data sources and tools
+
+- **H3 resolution 9** grid.
+- **Dasymetric population map:**  
+  [Census]{.flow-pill} $\leftrightarrow$ [Land use]{.flow-pill} $\leftrightarrow$ [Building data (GBA)]{.flow-pill}
+
+::: {style="margin-top: 0.6em;"}
+| Source | Data / Used for |
+|---|---|
+| **OpenStreetMap (OSM)** | Buildings, POIs, cycling network, parking infrastructure, … |
+| **TML** | Validations at PT stops |
+| **Micro-mobility operators** | GBFS data |
+| **PSP & GNR** <img src="images/icons/psp.png" height="22" style="vertical-align: middle; margin-left: 6px;" /> <img src="images/icons/gnr.png" height="26" style="vertical-align: middle; margin-left: 4px;" /> | Data on bike thefts |
+:::
+
