@@ -26,22 +26,27 @@ sudo mount --bind /data/TML/validacoes/ /data/biclar-parking/raw/TML_validacoes
 # 3. Ensure /etc/fuse.conf allows other users:
 sudo sed -i 's/#user_allow_other/user_allow_other/' /etc/fuse.conf
 
-# 4. Obtain/renew Kerberos ticket from keytab and mount (and keep renewing in background):
-#    Note: An active sshfs session on sigma also needs its remote AFS token refreshed before
-#    the ~10h token lifetime expires. Adding a 6-hour cron entry in /etc/cron.d/ist-sshfs
-#    ensures both the local Kerberos ticket and the remote AFS token on sigma stay fresh forever:
-#
-#    cat << 'EOF' | sudo tee /etc/cron.d/ist-sshfs
-#    0 */6 * * * root kinit -k -t /etc/ist1108284.keytab ist1108284@IST.UTL.PT && ssh -o GSSAPIAuthentication=yes -o GSSAPIDelegateCredentials=yes ist1108284@sigma.ist.utl.pt "aklog" || (fusermount3 -uz /data/biclar-parking/dashboard_data; sshfs ist1108284@sigma.ist.utl.pt:/afs/.ist.utl.pt/groups/ushift/web/content/biclar /data/biclar-parking/dashboard_data -o allow_other,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,GSSAPIAuthentication=yes,GSSAPIDelegateCredentials=yes)
-#    EOF
+# 4. Obtain Kerberos ticket from keytab and mount:
+#    NOTE: Must connect to a specific node (sigma01.ist.utl.pt), NOT the round-robin alias
+#    (sigma.ist.utl.pt), because Kerberos host principals in IST.UTL.PT are registered per node
+#    (host/sigma01.ist.utl.pt@IST.UTL.PT). Using sigma.ist.utl.pt causes GSSAPI to fail and ask
+#    for a password!
+sudo kinit -l 10h -k -t /etc/ist1108284.keytab ist1108284@IST.UTL.PT
 
-sudo kinit -k -t /etc/ist1108284.keytab ist1108284@IST.UTL.PT
-
-sudo sshfs ist1108284@sigma.ist.utl.pt:/afs/.ist.utl.pt/groups/ushift/web/content/biclar \
+sudo umount -l /data/biclar-parking/dashboard_data 2>/dev/null || true
+sudo sshfs ist1108284@sigma01.ist.utl.pt:/afs/.ist.utl.pt/groups/ushift/web/content/biclar \
   /data/biclar-parking/dashboard_data \
-  -o allow_other,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,GSSAPIAuthentication=yes,GSSAPIDelegateCredentials=yes
+  -o allow_other,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,StrictHostKeyChecking=no,GSSAPIAuthentication=yes,GSSAPIDelegateCredentials=yes
 
-ls -ld /data/biclar-parking/dashboard_data
+# 5. Keep the Kerberos ticket and remote AFS PAG token alive via cron (every 2 hours):
+sudo tee /etc/cron.d/ist-sshfs > /dev/null << 'EOF'
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+0 */2 * * * root kinit -l 10h -k -t /etc/ist1108284.keytab ist1108284@IST.UTL.PT && { umount -l /data/biclar-parking/dashboard_data 2>/dev/null || true; sleep 1; sshfs ist1108284@sigma01.ist.utl.pt:/afs/.ist.utl.pt/groups/ushift/web/content/biclar /data/biclar-parking/dashboard_data -o allow_other,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,StrictHostKeyChecking=no,GSSAPIAuthentication=yes,GSSAPIDelegateCredentials=yes; }
+EOF
+sudo chmod 644 /etc/cron.d/ist-sshfs
+
+df -h /data/biclar-parking/dashboard_data
 
 # unmount
-# sudo fusermount3 -u /data/biclar-parking/dashboard_data
+# sudo umount -l /data/biclar-parking/dashboard_data
