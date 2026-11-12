@@ -1,0 +1,31 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: >-
+  U-Shift/biclar-parking: a methodology for prioritization
+  of bicycle parking infrastructure implementation in urban
+  areas (Data treatment, processing steps, and
+  methodological report)
+message: 'If you use this software, please cite it as below.'
+type: software
+authors:
+  - family-names: Alvelos
+    given-names: Miguel
+  - family-names: F. Matos
+    given-names: Gonçalo
+    orcid: 'https://orcid.org/0009-0001-3489-1732'
+  - given-names: Francisco
+    family-names: Valério
+  - family-names: Félix
+    given-names: Rosa
+    orcid: 'https://orcid.org/0000-0002-5642-6006'
+  - given-names: Filipe
+    family-names: Moura
+    orcid: 'https://orcid.org/0000-0001-7749-8490'
+repository-code: 'https://github.com/U-Shift/biclar-parking'
+keywords:
+  - Cycling infrastructure
+  - Bicycle parking
+  - Decision support tools
+license: GPL-3.0
