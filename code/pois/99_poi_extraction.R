@@ -155,7 +155,7 @@ osm_polygons_raw <- oe_get(
 )
 
 osm_polygons_tagged <- osm_polygons_raw |>
-  filter(!is.na(amenity) | !is.na(shop) | !is.na(tourism) | !is.na(leisure) | !is.na(office) | !is.na(healthcare) | !is.na(landuse))
+  filter(!is.na(building) | !is.na(amenity) | !is.na(shop) | !is.na(tourism) | !is.na(leisure) | !is.na(office) | !is.na(healthcare))
 
 osm_polygon_centroids <- osm_polygons_tagged |>
   st_transform(crs_work) |>
@@ -168,25 +168,22 @@ osm_all <- bind_rows(
   osm_polygon_centroids
 )
 
-# Classify OSM features into the norm-table taxonomy. Only categories NOT
-# already sourced from Carris are kept (see mapping table in the chat reply).
+# Classify OSM features into the norm-table taxonomy.
 classify_osm <- function(df) {
   df |>
     mutate(
       category = case_when(
-        shop == "mall" | building == "retail"              ~ "retail_large",
-        !is.na(shop) & !shop %in% c("mall")                ~ "retail_small",
+        !is.na(shop)                                       ~ "retail",
         !is.na(healthcare)                                 ~ "healthcare_centres",
         amenity %in% c("cinema", "theatre", "arts_centre",
                        "place_of_worship", "library")      ~ "cultural",
         tourism %in% c("hotel", "hostel", "guest_house")   ~ "hotel_hostel",
-        amenity %in% c("cafe", "restaurant", "fast_food")  ~ "cafe_restaurant",
+        amenity %in% c("cafe", "restaurant", "fast_food",
+                       "bar", "nightclub")                 ~ "cafe_restaurant",
         leisure %in% c("sports_centre", "fitness_centre",
                        "swimming_pool", "stadium")         ~ "sports_facility",
-        !is.na(office)                                     ~ "office_industry",
-        landuse == "industrial"                            ~ "office_industry",
-        leisure %in% c("park", "garden", "nature_reserve") ~ "recreational_area",
-        amenity %in% c("bar","nightclub")                  ~ "bar",
+        building == "office" | !is.na(office)              ~ "office",
+        building == "industrial"                           ~ "industry",
         TRUE                                               ~ NA_character_
       ),
       subcategory = case_when(
@@ -202,19 +199,18 @@ classify_osm <- function(df) {
         amenity == "library"                               ~ "library",
         amenity == "cafe"                                  ~ "cafe",
         amenity %in% c("restaurant","fast_food")           ~ "restaurant",
-        !is.na(office)                                     ~ "office",
-        landuse == "industrial"                            ~ "industry",
+        amenity %in% c("bar", "nightclub")                 ~ "bar",
         TRUE ~ NA_character_
       )
     ) |>
+#   subset(!is.na(name)) |>
     filter(!is.na(category)) |>
     transmute(
       poi_id = as.character(osm_id), name = name,
       category, subcategory,
       source = "osm", municipality = NA_character_,
       geometry = geometry
-    ) |>
-    subset(!is.na(name))
+    )
 }
 
 osm_poi <- classify_osm(osm_all)
