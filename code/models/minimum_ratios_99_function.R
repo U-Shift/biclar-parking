@@ -29,7 +29,7 @@ source("code/99_results_load.R")
 # grid_csv - file with grid mid - municipality id (if grid_gpkg already has the mid the function can be changed).
 # buildings_grid - file with all building characteristics per grid cell - the most important characteristics for the
 # residential ratios is number of households.
-# ratios - csv file with minimum and maximum ratios for each municipality, as well as the unit they're in (e.g. 0.1 spots/m2)
+# ratios - csv file with minimum and maximum ratios for each municipality, as well as the unit they're in (e.g. 1 spot/household)
 residential_mr <- function(grid_gpkg, grid_csv, buildings_grid, ratios){
   parking_spots <- grid_gpkg |>
     mutate(
@@ -57,7 +57,7 @@ residential_mr <- function(grid_gpkg, grid_csv, buildings_grid, ratios){
 residential_ratios <- read.csv("data/models/minimum_ratios/residential.csv")
 mrm_residential <- residential_mr(grid, grid_meta, grid_dasymetric, residential_ratios)
 
-View(mrm_residential)
+# View(mrm_residential)
 mapview(mrm_residential, zcol="parking_min_residential")
 
 # 2. POI minimum ratios function -------------------
@@ -76,8 +76,8 @@ poi_mr <- function(poi_grid, ratios){
     ) |>
     left_join(ratios, by = "category") |>
     mutate(
-      parking_min = area*poi_min,
-      parking_max = area*poi_max
+      parking_min = (area*poi_min)/100,
+      parking_max = (area*poi_max)/100
     )
 
   parking_wide <- parking_long |>
@@ -215,15 +215,15 @@ schools_mr <- function(schools_grid, university_grid, ratios){
   all_schools_grid <- all_schools_grid |>
     cross_join(ratios_wide) |>
     mutate(
-      parking_min_schools_childcare = n_students_childcare*schools_min_childcare,
-      parking_min_schools_primary = n_students_primary_school*schools_min_primary,
-      parking_min_schools_secondary = n_students_secondary_school*schools_min_secondary,
-      parking_min_schools_university = n_students_university*schools_min_university,
+      parking_min_schools_childcare = n_students_childcare * schools_min_childcare,
+      parking_min_schools_primary = n_students_primary_school * schools_min_primary_school,
+      parking_min_schools_secondary = n_students_secondary_school * schools_min_secondary_school,
+      parking_min_schools_university = n_students_university * schools_min_university,
 
-      parking_max_schools_childcare = n_students_childcare*schools_max_childcare,
-      parking_max_schools_primary = n_students_primary_school*schools_max_primary,
-      parking_max_schools_secondary = n_students_secondary_school*schools_max_secondary,
-      parking_max_schools_university = n_students_university*schools_max_university,
+      parking_max_schools_childcare = n_students_childcare * schools_max_childcare,
+      parking_max_schools_primary = n_students_primary_school * schools_max_primary_school,
+      parking_max_schools_secondary = n_students_secondary_school * schools_max_secondary_school,
+      parking_max_schools_university = n_students_university * schools_max_university,
 
       parking_min_schools_total = parking_min_schools_childcare + parking_min_schools_primary + parking_min_schools_secondary + parking_min_schools_university,
       parking_max_schools_total = parking_max_schools_childcare + parking_max_schools_primary + parking_max_schools_secondary + parking_max_schools_university
@@ -253,6 +253,7 @@ mrm_total <- mrm_total |>
     parking_min_total = parking_max_residential + parking_min_poi_total + parking_min_pt_total + parking_min_schools_total,
     parking_max_total = parking_max_residential + parking_max_poi_total + parking_max_pt_total + parking_max_schools_total
   )
+
 View(mrm_total)
 mapview(mrm_total, zcol = "parking_min_total")
 mapview(mrm_total, zcol = "parking_max_total")

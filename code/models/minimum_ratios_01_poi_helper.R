@@ -93,12 +93,12 @@ poi_buildings <- poi_buildings |> # remove outliers and give them the p95 value
   select(-p95)
 
 poi_buildings <- poi_buildings |>
-  select(poi_id, name, category, subcategory, poi_area, geometry)
+  select(poi_id, name, category, subcategory, poi_area, geom)
 
 
 View(poi_buildings)
 quantile(poi_buildings$poi_area, probs = seq(0,1,0.05))
-mapview(filter(poi_buildings, category == "office_industry"), zcol = "poi_area")
+mapview(filter(poi_buildings, category == "industry"), zcol = "poi_area")
 
 st_write(poi_buildings, "data/processed/poi/buildings/poi_buildings.gpkg", delete_dsn = TRUE, quiet = TRUE)
 write_csv(poi_buildings |> st_drop_geometry(), "data/processed/poi/buildings/poi_buildings.csv")
@@ -130,7 +130,7 @@ poi_buildings_grid <- grid |>
 poi_buildings_grid[is.na(poi_buildings_grid)] <- 0
 
 
-mapview(poi_buildings_grid, zcol="area_office_industry")
+mapview(poi_buildings_grid, zcol="area_office")
 st_write(poi_buildings_grid, "data/processed/poi/buildings/poi_buildings_grid.gpkg", delete_dsn = TRUE, quiet = TRUE)
 write_csv(poi_buildings_grid |> st_drop_geometry(), "data/processed/poi/buildings/poi_buildings_grid.csv")
 
