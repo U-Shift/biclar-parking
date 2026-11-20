@@ -53,7 +53,7 @@ residential_mr <- function(grid_gpkg, grid_csv, buildings_grid, ratios){
   return(parking_spots)
 }
 
-# grid_dasymetric <- read.csv("data/base/daysimetric/grid_dasymetric_combined.csv")
+grid_dasymetric <- read.csv("data/base/daysimetric/grid_dasymetric_combined.csv")
 residential_ratios <- read.csv("data/models/minimum_ratios/residential.csv")
 mrm_residential <- residential_mr(grid, grid_meta, grid_dasymetric, residential_ratios)
 
@@ -113,7 +113,7 @@ poi_mr <- function(poi_grid, ratios){
   return(parking_final)
 }
 
-# grid_pois_area <- read.csv("data/processed/poi/buildings/poi_buildings_grid.csv")
+grid_pois_area <- read.csv("data/processed/poi/buildings/poi_buildings_grid.csv")
 poi_ratios <- read.csv("data/models/minimum_ratios/poi.csv")
 mrm_poi <- poi_mr(select(grid_pois_area, c(gid, starts_with("area_"))), poi_ratios)
 
@@ -181,7 +181,7 @@ pt_mr <- function(pt_grid, ratios){
   return(parking_final)
 }
 
-# grid_ticketing_global <- read.csv("data/analysis/ticketing/grid_ticketing_global.csv")
+grid_ticketing_global <- read.csv("data/analysis/ticketing/grid_ticketing_global.csv")
 pt_ratios <- read.csv("data/models/minimum_ratios/pt.csv")
 mrm_pt <- pt_mr(grid_ticketing_global, pt_ratios)
 
@@ -248,10 +248,13 @@ mrm_total <- grid |>
   left_join(mrm_poi |> st_drop_geometry()) |>
   left_join(mrm_pt |> st_drop_geometry()) |>
   left_join(mrm_schools |> st_drop_geometry())
-mrm_total <- mrm_total |>
+mrm_total <- mrm_total |> # compute total number of parking spots according to MRM and the ones that are necessary (total - existing)
+  left_join(parking_grid |> st_drop_geometry() |> select(gid, capacity), by = "gid") |>
   mutate(
     parking_min_total = parking_max_residential + parking_min_poi_total + parking_min_pt_total + parking_min_schools_total,
-    parking_max_total = parking_max_residential + parking_max_poi_total + parking_max_pt_total + parking_max_schools_total
+    parking_max_total = parking_max_residential + parking_max_poi_total + parking_max_pt_total + parking_max_schools_total,
+    parking_min_necessary = parking_min_total - capacity,
+    parking_max_necessary = parking_max_total - capacity
   )
 
 View(mrm_total)
