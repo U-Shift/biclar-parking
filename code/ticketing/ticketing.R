@@ -7,6 +7,8 @@ source("code/00_helpers.R")
 
 # Parameters --------------------------------------------------
 OUTPUT_FOLDER <- "data/analysis/ticketing"
+PEAK_START_HOUR <- 8
+PEAK_END_HOUR <- 9
 
 # Load ticketing data --------------------------------------------------
 base_folder <- "data/raw/TML_validacoes/06-05-2026 Todos Operadores"
@@ -180,31 +182,36 @@ table(ticketing_sf$mode)
 
 # Overlap ticketing and grid --------------------------------------------------
 
-# > All tickets
+summarise_ticketing_by_grid <- function(df) {
+    df |>
+        st_drop_geometry() |>
+        filter(!is.na(gid)) |>
+        group_by(gid) |>
+        summarise(
+            n = n(),
+            n_bus = sum(mode == "bus", na.rm = TRUE),
+            n_train = sum(mode == "train", na.rm = TRUE),
+            n_metro = sum(mode == "metro", na.rm = TRUE),
+            n_ltr = sum(tolower(mode) == "ltr", na.rm = TRUE),
+            n_boat = sum(mode == "boat", na.rm = TRUE),
+            .groups = "drop"
+        )
+}
+
 ticketing_in_grid <- st_join(
     ticketing_sf |> select(id) |> rename(tid = id),
     grid |> select(gid),
     join = st_within
 )
 ticketing_in_grid <- ticketing_in_grid |> left_join(
-    ticketing_sf |> st_drop_geometry() |> select(id, mode),
+    ticketing_sf |> st_drop_geometry() |> select(id, mode, timestamp),
     by = c("tid" = "id")
 )
 ticketing_in_grid |> sample_n(10)
 mapview(ticketing_in_grid |> filter(is.na(gid)))
 
-grid_ticketing_global <- ticketing_in_grid |>
-    st_drop_geometry() |>
-    filter(!is.na(gid)) |>
-    group_by(gid) |>
-    summarise(
-        n = n(),
-        n_bus = sum(mode == "bus", na.rm = TRUE),
-        n_train = sum(mode == "train", na.rm = TRUE),
-        n_metro = sum(mode == "metro", na.rm = TRUE),
-        n_ltr = sum(tolower(mode) == "ltr", na.rm = TRUE),
-        n_boat = sum(mode == "boat", na.rm = TRUE)
-    )
+# > All tickets (global)
+grid_ticketing_global <- summarise_ticketing_by_grid(ticketing_in_grid)
 
 sum(grid_ticketing_global$n) # 2117346
 testthat::expect_equal(sum(grid_ticketing_global$n), nrow(ticketing_sf) - nrow(ticketing_in_grid |> filter(is.na(gid))))
@@ -218,5 +225,25 @@ mapview(grid |> left_join(grid_ticketing_global), zcol = "n")
 write.csv(
     grid_ticketing_global,
     sprintf("%s/grid_ticketing_global.csv", OUTPUT_FOLDER),
+    row.names = FALSE
+)
+
+# > Peak hour tickets (8:00 - 9:00 AM)
+ticketing_in_grid_peak <- ticketing_in_grid |>
+    filter(
+        !is.na(timestamp),
+        as.POSIXlt(timestamp)$hour >= PEAK_START_HOUR,
+        as.POSIXlt(timestamp)$hour < PEAK_END_HOUR
+    )
+
+grid_ticketing_peak <- summarise_ticketing_by_grid(ticketing_in_grid_peak)
+
+sum(grid_ticketing_peak$n)
+testthat::expect_equal(sum(grid_ticketing_peak$n), nrow(ticketing_in_grid_peak |> filter(!is.na(gid))))
+mapview(grid |> left_join(grid_ticketing_peak), zcol = "n")
+
+write.csv(
+    grid_ticketing_peak,
+    sprintf("%s/grid_ticketing_peak.csv", OUTPUT_FOLDER),
     row.names = FALSE
 )
