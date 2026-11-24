@@ -181,7 +181,7 @@ pt_mr <- function(pt_grid, ratios){
   return(parking_final)
 }
 
-grid_ticketing_global <- read.csv("data/analysis/ticketing/grid_ticketing_global.csv")
+grid_ticketing_global <- read.csv("data/analysis/ticketing/grid_ticketing_peak.csv")
 pt_ratios <- read.csv("data/models/minimum_ratios/pt.csv")
 mrm_pt <- pt_mr(grid_ticketing_global, pt_ratios)
 
