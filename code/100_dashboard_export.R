@@ -100,9 +100,8 @@ grid_dashboard <- grid |>
       rename_with(~ stringr::str_replace(., "poi_", "pois_n_poi_"))
   ) |>
   mutate(
-    pois_n_poi_total = pois_n_poi_schools + pois_n_poi_faculties + pois_n_poi_cafe_restaurant + pois_n_poi_office_industry +
-      pois_n_poi_retail_small + pois_n_poi_healthcare_centres + pois_n_poi_recreational_area + pois_n_poi_cultural +
-      pois_n_poi_sports_facility + pois_n_poi_hotel_hostel + pois_n_poi_retail_large + pois_n_poi_bar
+    pois_n_poi_total = pois_n_poi_schools + pois_n_poi_faculties + pois_n_poi_cafe_restaurant + pois_n_poi_office + pois_n_poi_industry +
+      pois_n_poi_retail + pois_n_poi_healthcare_centres + pois_n_poi_cultural + pois_n_poi_sports_facility + pois_n_poi_hotel_hostel
   ) |>
   # Models
   # > Minimum ratios

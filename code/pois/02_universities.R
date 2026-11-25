@@ -60,7 +60,7 @@ univ_students_geocoded <- univ_students |>
   tidyr::unnest(geocoded_coord, keep_empty = TRUE)
 logr::log_close()
 
-nrow(univ_students_geocoded) # 92
+nrow(univ_students_geocoded) # 91
 nrow(univ_students_geocoded |> filter(is.na(lat), is.na(lon))) # 3
 # View(univ_students_geocoded |> filter(is.na(lat), is.na(lon)))
 
