@@ -37,9 +37,12 @@ univ_students <- univ_students_raw |>
   rename(
     COD_UNIVERSIDADE = `Código do estabelecimento de ensino`,
     COD_FACULDADE = `Código da unidade orgânica`
+  ) |>
+  filter(
+    COD_UNIVERSIDADE != 1400 # remove Universidade Aberta (only online university)
   )
 
-nrow(univ_students) # 92
+nrow(univ_students) # 91
 # View(univ_students)
 
 ## 1.2 Geocode faculty locations -------------------------
