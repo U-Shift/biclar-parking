@@ -317,6 +317,61 @@ municipalities_dashboard <- municipalities_dashboard |> mutate(
 )
 
 
+# Summary statistics (measures of central tendency and spread) ------------
+compute_summary_stats <- function(df, scale_name, digits = 2, cols_dont_round = character()) {
+  df_plain <- if (inherits(df, "sf")) sf::st_drop_geometry(df) else as.data.frame(df)
+
+  id_pattern <- "(^|_)(id|gid|pid|mid|nid)$|^id$"
+  num_cols <- names(df_plain)[
+    vapply(df_plain, is.numeric, logical(1)) &
+      !grepl(id_pattern, names(df_plain), ignore.case = TRUE)
+  ]
+
+  rows <- lapply(num_cols, function(col) {
+    vals <- df_plain[[col]]
+    vals <- vals[!is.na(vals)]
+
+    if (length(vals) == 0) {
+      stats <- c(
+        mean = NA_real_, min = NA_real_, p5 = NA_real_, p25 = NA_real_,
+        median = NA_real_, p75 = NA_real_, p95 = NA_real_, max = NA_real_, sd = NA_real_
+      )
+    } else {
+      qs <- unname(stats::quantile(vals, probs = c(0.05, 0.25, 0.50, 0.75, 0.95), na.rm = TRUE))
+      stats <- c(
+        mean = mean(vals),
+        min = min(vals),
+        p5 = qs[1],
+        p25 = qs[2],
+        median = qs[3],
+        p75 = qs[4],
+        p95 = qs[5],
+        max = max(vals),
+        sd = stats::sd(vals)
+      )
+      if (!col %in% cols_dont_round) {
+        stats <- round(stats, digits)
+      }
+    }
+
+    data.frame(
+      scale = scale_name,
+      column = col,
+      as.list(stats),
+      stringsAsFactors = FALSE
+    )
+  })
+
+  do.call(rbind, rows)
+}
+
+dashboard_summary_stats <- bind_rows(
+  compute_summary_stats(grid_dashboard, "grid", cols_dont_round = cols_dont_round),
+  compute_summary_stats(parishes_dashboard, "parish", cols_dont_round = cols_dont_round),
+  compute_summary_stats(municipalities_dashboard, "municipality", cols_dont_round = cols_dont_round)
+)
+
+
 # Store output ------------------------------------------------------
 output_dir <- "data/dashboard_data"
 
@@ -327,6 +382,7 @@ output_dir <- "data/dashboard_data"
 write.csv(grid_dashboard |> st_drop_geometry(), file.path(output_dir, "grid_dashboard.csv"), row.names = FALSE)
 write.csv(parishes_dashboard |> st_drop_geometry(), file.path(output_dir, "parishes_dashboard.csv"), row.names = FALSE)
 write.csv(municipalities_dashboard |> st_drop_geometry(), file.path(output_dir, "municipalities_dashboard.csv"), row.names = FALSE)
+write.csv(dashboard_summary_stats, file.path(output_dir, "dashboard_summary_stats.csv"), row.names = FALSE)
 # grid_dashboard = read.csv(file.path(output_dir, "grid_dashboard.csv"))
 
 st_write(
