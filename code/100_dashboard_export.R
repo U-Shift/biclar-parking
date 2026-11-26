@@ -128,6 +128,13 @@ grid_dashboard <- grid |>
     by = "gid"
   )
 
+# Dummy impact variable (kg CO2 saved per parking spot per year)
+set.seed(42)
+grid_dashboard <- grid_dashboard |>
+  mutate(
+    impact_perSpot_savedCO2 = round(pmin(pmax(rlnorm(n(), meanlog = log(120), sdlog = 0.55), 10), 600), 2)
+  )
+
 # View(grid_dashboard)
 str(grid_dashboard |> st_drop_geometry())
 names(grid_dashboard)
@@ -187,7 +194,9 @@ col_to_agg <- c(
   setNames(
     ifelse(grepl("_max$", poi_cols), "max", "min"),
     poi_cols
-  )
+  ),
+  # Impact (dummy)
+  impact_perSpot_savedCO2 = "mean"
 )
 col_to_agg
 
